@@ -2,11 +2,14 @@
 // sound effects, and (later) music. Music and ambience duck automatically while the
 // narrator speaks, so lines are always heard clearly.
 
+import { MUSIC, MUSIC_KEYS, musicUrl } from '../shared/music.ts'
+import type { MusicKey } from '../shared/music.ts'
 import { SFX_KEYS, sfxUrl } from '../shared/sfx.ts'
 import type { SfxKey } from '../shared/sfx.ts'
 import type { PlaybackFactory, SpeechPlayback } from './AudioManager.ts'
 
 export type Bus = 'voice' | 'music' | 'ambience' | 'sfx'
+export type SoundKey = SfxKey | MusicKey
 
 /** Initial mix levels (0-1). */
 const BUS_LEVELS: Record<Bus, number> = { voice: 1, music: 0.55, ambience: 0.7, sfx: 0.8 }
@@ -14,6 +17,9 @@ const BUS_LEVELS: Record<Bus, number> = { voice: 1, music: 0.55, ambience: 0.7, 
 const DUCK_LEVEL = 0.3
 const DUCK_ATTACK_S = 0.15
 const DUCK_RELEASE_S = 0.8
+/** The inner voice gets a soft, dreamy room around it. */
+const VOICE_REVERB_SECONDS = 2.2
+const VOICE_REVERB_MIX = 0.22
 
 export interface PlayOptions {
   bus?: Bus
@@ -36,7 +42,7 @@ export class SoundEngine {
   private readonly master: GainNode
   private readonly duck: GainNode
   private readonly buses: Record<Bus, GainNode>
-  private readonly buffers = new Map<SfxKey, AudioBuffer>()
+  private readonly buffers = new Map<SoundKey, AudioBuffer>()
   private speaking = 0
   private muted = false
 
@@ -59,6 +65,13 @@ export class SoundEngine {
       music: bus('music', this.duck),
       ambience: bus('ambience', this.duck),
     }
+
+    // Voice reverb: a wet copy of the voice bus through a synthetic dreamy room.
+    const reverb = this.ctx.createConvolver()
+    reverb.buffer = this.impulse(VOICE_REVERB_SECONDS)
+    const wet = this.ctx.createGain()
+    wet.gain.value = VOICE_REVERB_MIX
+    this.buses.voice.connect(reverb).connect(wet).connect(this.master)
   }
 
   /** Must be called from a user gesture (e.g. the Start button) before sound can play. */
@@ -66,13 +79,13 @@ export class SoundEngine {
     if (this.ctx.state !== 'running') await this.ctx.resume()
   }
 
-  /** Fetches and decodes the SFX library. Missing files are skipped silently. */
-  async preload(keys: readonly SfxKey[] = SFX_KEYS): Promise<void> {
+  /** Fetches and decodes the SFX library and soundtrack. Missing files are skipped silently. */
+  async preload(keys: readonly SoundKey[] = [...SFX_KEYS, ...MUSIC_KEYS]): Promise<void> {
     await Promise.all(
       keys.map(async (key) => {
         if (this.buffers.has(key)) return
         try {
-          const response = await fetch(sfxUrl(key))
+          const response = await fetch(key in MUSIC ? musicUrl(key as MusicKey) : sfxUrl(key as SfxKey))
           if (!response.ok) return
           this.buffers.set(key, await this.ctx.decodeAudioData(await response.arrayBuffer()))
         } catch {
@@ -83,7 +96,7 @@ export class SoundEngine {
   }
 
   /** Plays a one-shot sound. Returns a function that stops it early. */
-  play(key: SfxKey, options: PlayOptions = {}): () => void {
+  play(key: SoundKey, options: PlayOptions = {}): () => void {
     const buffer = this.buffers.get(key)
     if (!buffer) return () => {}
     const { source, gain } = this.chain(buffer, options)
@@ -99,7 +112,7 @@ export class SoundEngine {
   }
 
   /** Starts a seamless loop. Starts silent if volume is 0, so callers can fade it in. */
-  loop(key: SfxKey, options: PlayOptions = {}): LoopHandle {
+  loop(key: SoundKey, options: PlayOptions = {}): LoopHandle {
     const buffer = this.buffers.get(key)
     if (!buffer) return { setVolume() {}, setPan() {}, setRate() {}, stop() {} }
     const { source, gain, panner } = this.chain(buffer, options)
@@ -170,6 +183,17 @@ export class SoundEngine {
         }
       },
     }
+  }
+
+  /** Stereo noise with an exponential tail: a cheap, smooth reverb impulse. */
+  private impulse(seconds: number): AudioBuffer {
+    const length = Math.floor(this.ctx.sampleRate * seconds)
+    const buffer = this.ctx.createBuffer(2, length, this.ctx.sampleRate)
+    for (let channel = 0; channel < 2; channel++) {
+      const data = buffer.getChannelData(channel)
+      for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / length) ** 3
+    }
+    return buffer
   }
 
   private chain(buffer: AudioBuffer, options: PlayOptions) {

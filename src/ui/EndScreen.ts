@@ -22,10 +22,10 @@ export class EndScreen {
 
     const title = document.createElement('h1')
     title.className = 'screen-title'
-    title.textContent = escaped ? 'You escaped' : "Time's up"
+    title.textContent = escaped ? 'You woke up' : 'Sinking deeper'
     const text = document.createElement('p')
     text.className = 'screen-text'
-    text.textContent = escaped ? `With ${clock} left on the clock. The narrator is grudgingly impressed.` : 'The room wins this time. It usually does.'
+    text.textContent = escaped ? `You found your way out with ${clock} left before the dream faded.` : 'The dream closed around you. Maybe next time.'
     const button = document.createElement('button')
     button.type = 'button'
     button.className = 'ui-button'

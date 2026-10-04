@@ -92,6 +92,17 @@ export interface ApiError {
   error: string
 }
 
+/**
+ * Performance cues Gemini may add for ElevenLabs v3, e.g. "[sighs]". They are spoken as
+ * acting, never shown: subtitles use stripAudioTags. Initial implementation choice.
+ */
+export const AUDIO_TAGS = ['[nervous laugh]', '[sighs]', '[whispers]', '[gasps]', '[laughs]', '[gulps]', '[mumbles]', '[excited]'] as const
+
+/** Removes [bracketed] performance cues, for subtitles and word counts. */
+export function stripAudioTags(line: string): string {
+  return line.replace(/\[[^\]]{1,30}\]\s*/g, '').replace(/\s{2,}/g, ' ').trim()
+}
+
 export function isNarratorEmotion(value: unknown): value is NarratorEmotion {
   return typeof value === 'string' && (NARRATOR_EMOTIONS as readonly string[]).includes(value)
 }

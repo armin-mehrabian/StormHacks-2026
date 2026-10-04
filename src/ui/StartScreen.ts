@@ -17,12 +17,12 @@ export function showStartScreen(parent: HTMLElement = document.body): Promise<vo
   title.className = 'screen-title'
   title.textContent = 'Escape Room A'
   const tagline = document.createElement('small')
-  tagline.textContent = 'a room that talks back'
+  tagline.textContent = 'whose dream is this?'
   title.append(tagline)
 
   const text = document.createElement('p')
   text.className = 'screen-text'
-  text.textContent = 'You wake up in a locked bedroom. Five minutes on the clock. Someone is watching, and they have opinions.'
+  text.textContent = "You fall asleep, and wake up inside a stranger's dream, in their body, in their room. Find out who you are and get out before the dream fades."
 
   const button = document.createElement('button')
   button.type = 'button'

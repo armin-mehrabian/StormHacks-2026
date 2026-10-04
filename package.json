@@ -9,6 +9,8 @@
     "dev:server": "tsx watch server/index.ts",
     "start:server": "tsx server/index.ts",
     "sfx": "tsx scripts/generate-sfx.ts",
+    "voice:design": "tsx scripts/design-voice.ts",
+    "music": "tsx scripts/compose-music.ts",
     "typecheck": "tsc && tsc -p tsconfig.server.json",
     "build": "npm run typecheck && vite build",
     "preview": "vite preview"

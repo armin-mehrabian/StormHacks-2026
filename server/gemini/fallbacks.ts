@@ -1,48 +1,48 @@
 import type { GameEvent, NarratorEmotion, NarratorResponse } from '../../src/shared/contract.ts'
 
-// Used when Gemini is unavailable. Lines refer only to the event, never to puzzle answers;
-// hint events speak the engine's hint verbatim instead.
+// Used when Gemini is unavailable: the dreamer's inner voice, short and simple. Lines refer
+// only to the event, never to puzzle answers; hint events speak the engine's hint verbatim.
 const FALLBACKS: Record<GameEvent['type'], { emotion: NarratorEmotion; lines: readonly string[] }> = {
   game_start: {
     emotion: 'neutral',
-    lines: ['Rise and shine. The door is locked, and the clock is already running.'],
+    lines: ["Wait... whose hands are these? And whose room is this? Okay. Don't panic."],
   },
   repeated_action: {
     emotion: 'sarcastic',
-    lines: ['Again? A bold choice.', 'You and that thing are getting acquainted.', 'Consistency is one way to approach this.'],
+    lines: ['Again? Come on, me.', "It's still the same. Stop it.", 'Why do I keep doing that?'],
   },
   nothing_found: {
     emotion: 'sarcastic',
-    lines: ['Nothing. Shocking.', 'Thorough. Useless, but thorough.', 'Another dead end. Keep going.'],
+    lines: ['Nope. Nothing.', 'Great. Nothing again.', 'Okay, not there.'],
   },
   item_found: {
     emotion: 'praise',
-    lines: ['Oh, look at you, finding things.', 'Hold on to that.', 'Progress. Finally.'],
+    lines: ['Oh! What is this?', 'Ooh, that might matter.', "I'm keeping this."],
   },
   cipher_found: {
     emotion: 'neutral',
-    lines: ['Scrambled letters. Someone wanted this to be annoying.'],
+    lines: ['Scrambled letters... is this a code?'],
   },
   locked: {
     emotion: 'sarcastic',
-    lines: ['Locked. As locks tend to be.', 'It does not open by wanting it harder.'],
+    lines: ["Locked. Of course it's locked.", 'Nope. Need a key.'],
   },
   wrong_code: {
     emotion: 'sarcastic',
-    lines: ['Was that a code or a guess?', 'Wrong. Confidently wrong.', 'The lock is unimpressed.'],
+    lines: ['Wrong. Okay. Breathe.', 'Nope. Not that one.', "That wasn't it... was it?"],
   },
   unlocked: {
     emotion: 'praise',
-    lines: ['It opened. I am almost proud.', 'Well, well. That worked.'],
+    lines: ['Yes! It opened!', 'Oh thank goodness.'],
   },
-  near_solution: { emotion: 'hint', lines: ['You are close. Look around you.'] },
-  stuck: { emotion: 'hint', lines: ['Try something you have not tried yet.'] },
+  near_solution: { emotion: 'hint', lines: ['Wait... something here feels familiar.'] },
+  stuck: { emotion: 'hint', lines: ["Think. What haven't I tried yet?"] },
   time_warning: {
     emotion: 'warning',
-    lines: ['Tick tock. Time is not on your side.', 'The clock is winning.'],
+    lines: ["Everything's getting blurry... hurry.", "I don't have long. I can feel it."],
   },
-  escaped: { emotion: 'praise', lines: ['You escaped. I suppose congratulations are in order.'] },
-  time_up: { emotion: 'sarcastic', lines: ['Time is up. The room wins. It usually does.'] },
+  escaped: { emotion: 'praise', lines: ["I remember now... I'm waking up. I'm waking up!"] },
+  time_up: { emotion: 'sarcastic', lines: ["So sleepy... I can't... wake up..."] },
 }
 
 export function fallbackNarration(event: GameEvent): NarratorResponse {

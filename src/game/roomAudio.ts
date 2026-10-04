@@ -3,6 +3,7 @@
 // one-shot sounds for interactions.
 
 import type { SoundEngine, LoopHandle } from '../audio/SoundEngine.ts'
+import { SOUNDTRACK } from '../shared/music.ts'
 import type { SfxKey } from '../shared/sfx.ts'
 import type { DecorPlan } from './decor.ts'
 import type { RoomData, RoomObjectData } from './rooms/types'
@@ -15,6 +16,8 @@ const THUNDER_MAX_MS = 45_000
 /** Lightning flashes first; the thunder arrives a moment later. */
 const THUNDER_DELAY_MS = 450
 const TENSION_MS = 60_000
+const MUSIC_LEVEL = 0.8
+const MUSIC_FADE_IN_S = 5
 
 const SEARCH_SOUND: Record<RoomObjectData['kind'], SfxKey> = {
   bed: 'search-bed',
@@ -50,6 +53,8 @@ export class RoomAudio {
   private readonly onLightning: () => void
   private readonly placed: PlacedLoop[] = []
   private house: LoopHandle | undefined
+  private calmMusic: LoopHandle | undefined
+  private tenseMusic: LoopHandle | undefined
   private clock: LoopHandle | undefined
   private heartbeat: LoopHandle | undefined
   private stepTimer = 0
@@ -80,6 +85,10 @@ export class RoomAudio {
     if (lamps.length) this.place('lamp-hum', lamps, 110, 0.4, 0)
 
     this.heartbeat = sound.loop('heartbeat', { volume: 0, bus: 'sfx' })
+
+    this.calmMusic = sound.loop(SOUNDTRACK.calm, { volume: 0, bus: 'music' })
+    this.calmMusic.setVolume(MUSIC_LEVEL, MUSIC_FADE_IN_S)
+    this.tenseMusic = sound.loop(SOUNDTRACK.tense, { volume: 0, bus: 'music' })
   }
 
   /** Call every frame with the player's feet position. */
@@ -122,6 +131,11 @@ export class RoomAudio {
     const tension = timeRemainingMs <= TENSION_MS ? 1 - timeRemainingMs / TENSION_MS : 0
     this.heartbeat?.setVolume(tension > 0 ? 0.2 + 0.6 * tension : 0, 1)
     this.clock?.setRate(1 + 0.5 * tension)
+    // The soundtrack crossfades from calm to tense as the dream fades.
+    if (tension > 0) {
+      this.calmMusic?.setVolume(MUSIC_LEVEL * (1 - tension), 1)
+      this.tenseMusic?.setVolume(MUSIC_LEVEL * Math.min(1, tension * 1.5), 1)
+    }
   }
 
   search(kind: RoomObjectData['kind']): void {
@@ -153,6 +167,8 @@ export class RoomAudio {
   finish(escaped: boolean): void {
     for (const loop of this.placed) loop.handle.stop(1.5)
     this.house?.stop(2.5)
+    this.calmMusic?.stop(2)
+    this.tenseMusic?.stop(2)
     this.heartbeat?.stop(0.5)
     if (escaped) {
       this.sound.play('door-open')

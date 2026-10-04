@@ -2,7 +2,7 @@
 // them by importance, then asks the server for a line, queues the voice, and shows the
 // subtitle when that voice starts. Everything here is fire-and-forget; gameplay never waits.
 
-import { API_PATHS, EVENT_TEXT_LIMITS, INITIAL_TIMEOUTS_MS, isNarratorEmotion } from '../shared/contract.ts'
+import { API_PATHS, EVENT_TEXT_LIMITS, INITIAL_TIMEOUTS_MS, isNarratorEmotion, stripAudioTags } from '../shared/contract.ts'
 import type { GameEvent, GameEventType, NarratorEmotion, NarratorResponse } from '../shared/contract.ts'
 import type { GameEventEmitter } from '../game/events.ts'
 import type { AudioManager, SpeechPriority } from '../audio/AudioManager.ts'
@@ -32,7 +32,7 @@ const EVENT_PRIORITY: Record<GameEventType, SpeechPriority> = {
 const COOLDOWN_MS: Record<SpeechPriority, number> = { high: 0, normal: 3000, low: 7000 }
 
 // Used when the server cannot be reached at all; the server has its own fallback set.
-const CLIENT_FALLBACK: NarratorResponse = { line: 'Noted.', emotion: 'neutral', shouldSpeak: true }
+const CLIENT_FALLBACK: NarratorResponse = { line: 'Hmm...', emotion: 'neutral', shouldSpeak: true }
 
 export interface SubtitleView {
   show(line: string, emotion: NarratorEmotion): void
@@ -80,9 +80,12 @@ export class NarratorManager {
     try {
       const narration = await fetchNarration({ ...event, recentLines: [...this.recentLines] })
       if (!narration.shouldSpeak) return
+      // Audio tags like [sighs] are acted by the voice, never shown. They stay in the
+      // remembered lines so Gemini can vary them.
+      const text = stripAudioTags(narration.line)
       this.remember(narration.line)
 
-      const show = () => this.subtitles.show(narration.line, narration.emotion)
+      const show = () => this.subtitles.show(text, narration.emotion)
       // Muted: subtitle only, and skip the voice request to save credits.
       if (this.audio.isMuted()) {
         show()
