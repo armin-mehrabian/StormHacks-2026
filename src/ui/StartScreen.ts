@@ -9,7 +9,8 @@ const CONTROLS: [string, string][] = [
   ['M', 'mute'],
 ]
 
-export function showStartScreen(parent: HTMLElement = document.body): Promise<void> {
+/** Resolves when the player starts. The button waits for `ready` (the dream being generated). */
+export function showStartScreen(ready: Promise<unknown>, parent: HTMLElement = document.body): Promise<void> {
   const root = document.createElement('div')
   root.className = 'screen'
 
@@ -27,7 +28,13 @@ export function showStartScreen(parent: HTMLElement = document.body): Promise<vo
   const button = document.createElement('button')
   button.type = 'button'
   button.className = 'ui-button'
-  button.textContent = 'Wake up'
+  button.textContent = 'Falling asleep...'
+  button.disabled = true
+  void ready.finally(() => {
+    button.disabled = false
+    button.textContent = 'Wake up'
+    button.focus()
+  })
 
   const controls = document.createElement('div')
   controls.className = 'screen-controls'
@@ -52,6 +59,7 @@ export function showStartScreen(parent: HTMLElement = document.body): Promise<vo
       resolve()
     }
     const onKey = (event: KeyboardEvent) => {
+      if (button.disabled) return
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault()
         start()

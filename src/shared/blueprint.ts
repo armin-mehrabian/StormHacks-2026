@@ -3,6 +3,8 @@
 // before anyone plays it. The engine then owns all truth; the narrator only words things.
 // Must stay free of DOM and Node APIs: both tsconfigs compile it.
 
+import type { CastRole } from './contract.ts'
+
 // ---------------------------------------------------------------------------------------
 // Catalog
 // ---------------------------------------------------------------------------------------
@@ -21,6 +23,10 @@ export const OBJECT_KINDS = [
   'clock',
   'trash_can',
   'lockbox',
+  // Memory objects: inspecting one plays a voice from the dreamer's life.
+  'answering_machine',
+  'radio',
+  'music_box',
 ] as const
 export type ObjectKind = (typeof OBJECT_KINDS)[number]
 
@@ -54,6 +60,21 @@ export const KIND_SPECS: Record<ObjectKind, KindSpec> = {
   clock: { width: 1, height: 1, placement: 'top', solid: false, lockable: false, hangs: true },
   trash_can: { width: 1, height: 1, placement: 'any', solid: true, lockable: false },
   lockbox: { width: 1, height: 1, placement: 'any', solid: true, lockable: true },
+  answering_machine: { width: 1, height: 1, placement: 'any', solid: true, lockable: false },
+  radio: { width: 1, height: 1, placement: 'any', solid: true, lockable: false },
+  music_box: { width: 1, height: 1, placement: 'any', solid: true, lockable: false },
+}
+
+/** Kinds that can hold a memory, and how the memory sounds when played. */
+export const MEMORY_KINDS = {
+  answering_machine: 'phone',
+  radio: 'radio',
+  music_box: 'room',
+} as const satisfies Partial<Record<ObjectKind, MemoryEffect>>
+export type MemoryEffect = 'phone' | 'radio' | 'room'
+
+export function memoryEffect(kind: ObjectKind): MemoryEffect | undefined {
+  return (MEMORY_KINDS as Partial<Record<ObjectKind, MemoryEffect>>)[kind]
 }
 
 // ---------------------------------------------------------------------------------------
@@ -111,16 +132,44 @@ export type Lock =
   /** Digits only. clueIds[i] names the object or page whose text contains code[i]. */
   | { type: 'code'; code: string; clueIds: string[] }
 
+/** A voice from the dreamer's life, played by a memory object. */
+export interface Memory {
+  speaker: CastRole
+  /** Who it is, e.g. "Mom". */
+  speakerName: string
+  /** Spoken by ElevenLabs and shown as a transcript. May carry clues. */
+  text: string
+}
+
 export interface BlueprintObject {
   id: string
   kind: ObjectKind
   slot: SlotId
   name: string
-  /** Shown when inspected. May carry clues (a digit, a cipher shift). */
+  /** Shown when inspected, in the dreamer's first person. May carry clues. */
   description: string
   /** Item id hidden inside, if any. */
   contains?: string
   lock?: Lock
+  /** Only on memory kinds (answering machine, radio, music box). */
+  memory?: Memory
+}
+
+export const DREAM_MOODS = ['violet', 'blue', 'amber', 'green', 'rose'] as const
+export type DreamMood = (typeof DREAM_MOODS)[number]
+
+/** Whose dream this is. The inner voice only says the name and situation on waking. */
+export interface Dreamer {
+  name: string
+  age: number
+  /** What is weighing on them, e.g. "first violin audition at 9am tomorrow". */
+  situation: string
+  /** How they think and talk. */
+  personality: string
+  /** Their inner voice. */
+  voice: 'self_f' | 'self_m'
+  /** Colour tint of the dream. */
+  mood: DreamMood
 }
 
 export interface BlueprintItem {
@@ -143,6 +192,7 @@ export interface HintLadder {
 }
 
 export interface RoomBlueprint {
+  dreamer: Dreamer
   title: string
   introLine: string
   objects: BlueprintObject[]
@@ -172,6 +222,9 @@ export const BLUEPRINT_LIMITS = {
   maxHintLine: 160,
   minHintLines: 2,
   maxHintLines: 4,
+  maxMemoryText: 260,
+  maxSituation: 160,
+  maxPersonality: 160,
 } as const
 
 // ---------------------------------------------------------------------------------------
@@ -208,6 +261,16 @@ export function validateBlueprint(bp: RoomBlueprint): ValidationResult {
   const L = BLUEPRINT_LIMITS
 
   // --- shape and limits ---
+  const d = bp.dreamer
+  if (!d) err('dreamer missing')
+  else {
+    if (!d.name || d.name.length > L.maxName) err('dreamer name missing or too long')
+    if (!Number.isInteger(d.age) || d.age < 8 || d.age > 99) err('dreamer age must be 8-99')
+    if (!d.situation || d.situation.length > L.maxSituation) err('dreamer situation missing or too long')
+    if (!d.personality || d.personality.length > L.maxPersonality) err('dreamer personality missing or too long')
+    if (d.voice !== 'self_f' && d.voice !== 'self_m') err('dreamer voice must be self_f or self_m')
+    if (!(DREAM_MOODS as readonly string[]).includes(d.mood)) err('dreamer mood is not a known mood')
+  }
   if (!bp.title || bp.title.length > L.maxTitle) err('title missing or too long')
   if (!bp.introLine || bp.introLine.length > L.maxIntro) err('introLine missing or too long')
   if (bp.objects.length < L.minObjects || bp.objects.length > L.maxObjects) {
@@ -257,6 +320,14 @@ export function validateBlueprint(bp: RoomBlueprint): ValidationResult {
       err(`object "${obj.id}" description missing or too long`)
     }
     if (obj.lock && !spec.lockable) err(`object "${obj.id}" (${obj.kind}) cannot be locked`)
+    if (obj.memory) {
+      if (!memoryEffect(obj.kind)) err(`object "${obj.id}" (${obj.kind}) cannot hold a memory`)
+      if (!obj.memory.text || obj.memory.text.length > L.maxMemoryText) err(`memory in "${obj.id}" missing or too long`)
+      if (!obj.memory.speakerName || obj.memory.speakerName.length > L.maxName) err(`memory in "${obj.id}" needs a speakerName`)
+      if (obj.memory.speaker === 'self_f' || obj.memory.speaker === 'self_m') err(`memory in "${obj.id}" must be someone else's voice`)
+    } else if (memoryEffect(obj.kind)) {
+      err(`memory object "${obj.id}" (${obj.kind}) has no memory`)
+    }
     if (obj.contains) {
       if (!items.has(obj.contains)) err(`object "${obj.id}" contains unknown item "${obj.contains}"`)
       if (containedBy.has(obj.contains)) err(`item "${obj.contains}" is in two objects`)
@@ -268,10 +339,12 @@ export function validateBlueprint(bp: RoomBlueprint): ValidationResult {
     if (!containedBy.has(item.id)) err(`item "${item.id}" is not inside any object`)
   }
 
-  // Texts a clue can point at: object descriptions, the door, and page plaintext.
+  // Texts a clue can point at: object descriptions (plus any memory), the door, and page plaintext.
   const clueText = (id: string): string | undefined => {
     if (id === DOOR_ID) return bp.door.description
-    return objects.get(id)?.description ?? items.get(id)?.text
+    const obj = objects.get(id)
+    if (obj) return obj.memory ? `${obj.description} ${obj.memory.text}` : obj.description
+    return items.get(id)?.text
   }
   const checkLock = (ownerId: string, lock: Lock) => {
     if (lock.type === 'key') {

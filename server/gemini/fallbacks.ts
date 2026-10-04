@@ -41,6 +41,10 @@ const FALLBACKS: Record<GameEvent['type'], { emotion: NarratorEmotion; lines: re
     emotion: 'warning',
     lines: ["Everything's getting blurry... hurry.", "I don't have long. I can feel it."],
   },
+  memory_heard: {
+    emotion: 'neutral',
+    lines: ['That voice... I know that voice.', 'Why does that make my chest hurt?'],
+  },
   escaped: { emotion: 'praise', lines: ["I remember now... I'm waking up. I'm waking up!"] },
   time_up: { emotion: 'sarcastic', lines: ["So sleepy... I can't... wake up..."] },
 }

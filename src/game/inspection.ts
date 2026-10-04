@@ -18,6 +18,13 @@ export class InspectionTracker {
   count(objectId: string): number {
     return this.counts.get(objectId) ?? 0
   }
+
+  /** The object inspected the most times, if any. */
+  mostInspected(): { objectId: string; count: number } | undefined {
+    let best: { objectId: string; count: number } | undefined
+    for (const [objectId, count] of this.counts) if (!best || count > best.count) best = { objectId, count }
+    return best
+  }
 }
 
 /**

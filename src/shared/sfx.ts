@@ -35,6 +35,10 @@ export const SFX = {
   'search-trash': { prompt: 'rummaging through crumpled paper in a metal trash can', duration: 1.2 },
   'search-lockbox': { prompt: 'small locked metal box being shaken, rattling', duration: 1 },
 
+  'search-answering_machine': { prompt: 'click of an old answering machine button, then a single electronic beep', duration: 1 },
+  'search-radio': { prompt: 'old radio switching on, tuning dial sweeping through static, landing on a station', duration: 1.5 },
+  'search-music_box': { prompt: 'wooden music box lid opening, a few delicate tinkling music box notes of a lullaby', duration: 4 },
+
   // Pages and locks.
   'page-unfold': { prompt: 'unfolding an old piece of paper, crisp crinkle', duration: 1 },
   'locked-rattle': { prompt: 'doorknob rattling on a locked wooden door', duration: 1.2 },

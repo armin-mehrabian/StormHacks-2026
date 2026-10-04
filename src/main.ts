@@ -8,10 +8,14 @@ import { BedroomScene } from './game/scenes/BedroomScene.ts'
 import type { BedroomSceneData } from './game/scenes/BedroomScene.ts'
 import { GameState } from './game/state.ts'
 import { NarratorManager } from './narrator/NarratorManager.ts'
-import { FALLBACK_ROOM } from './shared/fallbackRoom.ts'
+import { loadDream } from './narrator/dream.ts'
+import { memoryEffect } from './shared/blueprint.ts'
+import { API_PATHS } from './shared/contract.ts'
+import type { JournalRequest, JournalResponse } from './shared/contract.ts'
 import { CodeLock } from './ui/CodeLock.ts'
 import { EndScreen } from './ui/EndScreen.ts'
 import { Hud } from './ui/Hud.ts'
+import { playIntro } from './ui/Intro.ts'
 import { Notice } from './ui/Notice.ts'
 import { PageOverlay } from './ui/PageOverlay.ts'
 import { showStartScreen } from './ui/StartScreen.ts'
@@ -21,8 +25,12 @@ const unsubscribeLogger = gameEvents.subscribe((event) => {
   console.info('[GameEvent]', event)
 })
 
+// ?demo plays the handmade, rehearsed dream; otherwise Gemini dreams a new one.
+const demo = new URLSearchParams(window.location.search).has('demo')
+const dreamReady = loadDream(demo)
+
 const sound = new SoundEngine()
-// Decode the SFX library while the title screen is up.
+// Decode the SFX library and soundtrack while the title screen is up.
 const soundReady = sound.preload()
 
 const audio = new AudioManager({ createPlayback: sound.voicePlayback })
@@ -52,20 +60,52 @@ function onKeyDown(event: KeyboardEvent): void {
 }
 window.addEventListener('keydown', onKeyDown)
 
-// Stage 3 replaces this with a Gemini-generated room (FALLBACK_ROOM stays the last resort).
-const state = new GameState(FALLBACK_ROOM)
-const sceneData: BedroomSceneData = {
-  state,
-  ui,
-  sound,
-  readAloud: (text) => void narrator.readAloud(text),
-}
-
 let game: Phaser.Game | undefined
-void showStartScreen().then(async () => {
+void showStartScreen(dreamReady).then(async () => {
   // The Start click is the user gesture browsers require before audio can play.
   await sound.unlock()
+  const { blueprint } = await dreamReady
   await soundReady
+
+  narrator.setDreamer(blueprint.dreamer)
+  const state = new GameState(blueprint)
+  const sceneData: BedroomSceneData = {
+    state,
+    ui,
+    sound,
+    voice: {
+      readAloud: (text) => void narrator.readAloud(text),
+      prefetchMemories: (memories) => narrator.prefetchMemories(memories),
+      playMemory: (objectId, memory) => {
+        const kind = blueprint.objects.find((o) => o.id === objectId)?.kind
+        const effect = (kind && memoryEffect(kind)) ?? 'room'
+        void narrator.playMemory(objectId, memory, (clip) => sound.tagEffect(clip, effect), () => {})
+      },
+    },
+    onEnd: (stats) => {
+      // The dreamer writes the journal, then reads it aloud once the ending line is done.
+      const request: JournalRequest = { dreamer: blueprint.dreamer, title: blueprint.title, stats }
+      void fetch(API_PATHS.journal, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+        signal: AbortSignal.timeout(10_000),
+      })
+        .then((response) => (response.ok ? (response.json() as Promise<JournalResponse>) : Promise.reject(new Error(`HTTP ${response.status}`))))
+        .then(({ entry }) => {
+          ui.endScreen.setJournal(entry, blueprint.dreamer, blueprint.title, stats)
+          void narrator.readAloud(entry)
+        })
+        .catch((error) => {
+          console.warn('[Journal] unavailable:', error)
+          ui.endScreen.setJournal('Dear diary, I had the strangest dream. I can barely remember it now.', blueprint.dreamer, blueprint.title, stats)
+        })
+    },
+  }
+
+  await playIntro(['2:47 AM', "Somewhere, someone can't sleep.", blueprint.introLine, '...and you just fell into their dream.'], () =>
+    sound.play('heartbeat', { volume: 0.8 }),
+  )
   sound.play('wake-up', { bus: 'ambience', volume: 0.9 })
   game = new Phaser.Game(createGameConfig())
   game.scene.add(BedroomScene.KEY, BedroomScene, true, sceneData)

@@ -1,5 +1,7 @@
 import './env.ts'
 import express from 'express'
+import { dreamRouter } from './routes/dream.ts'
+import { journalRouter } from './routes/journal.ts'
 import { narratorRouter } from './routes/narrator.ts'
 import { voiceRouter } from './routes/voice.ts'
 
@@ -10,6 +12,8 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true })
 })
 
+app.use(dreamRouter)
+app.use(journalRouter)
 app.use(narratorRouter)
 app.use(voiceRouter)
 

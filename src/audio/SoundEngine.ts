@@ -9,6 +9,8 @@ import type { SfxKey } from '../shared/sfx.ts'
 import type { PlaybackFactory, SpeechPlayback } from './AudioManager.ts'
 
 export type Bus = 'voice' | 'music' | 'ambience' | 'sfx'
+/** How a voice clip sounds: through a phone, a radio, or plainly in the room. */
+export type VoiceEffect = 'phone' | 'radio' | 'room'
 export type SoundKey = SfxKey | MusicKey
 
 /** Initial mix levels (0-1). */
@@ -44,6 +46,7 @@ export class SoundEngine {
   private readonly buses: Record<Bus, GainNode>
   private readonly buffers = new Map<SoundKey, AudioBuffer>()
   private speaking = 0
+  private readonly effects = new WeakMap<Blob, VoiceEffect>()
   private muted = false
 
   constructor() {
@@ -153,6 +156,11 @@ export class SoundEngine {
     this.buses[bus].gain.setTargetAtTime(clamp(volume, 0, 1), this.ctx.currentTime, 0.05)
   }
 
+  /** Marks a voice clip to be played through a phone or radio filter by voicePlayback. */
+  tagEffect(audio: Blob, effect: VoiceEffect): void {
+    this.effects.set(audio, effect)
+  }
+
   /** Narrator playback through the voice bus, ducking music and ambience while it plays. */
   readonly voicePlayback: PlaybackFactory = (audio: Blob): SpeechPlayback => {
     let source: AudioBufferSourceNode | undefined
@@ -164,12 +172,15 @@ export class SoundEngine {
         gain.gain.value = volume
         source = this.ctx.createBufferSource()
         source.buffer = buffer
-        source.connect(gain).connect(this.buses.voice)
+        const effect = this.effects.get(audio) ?? 'room'
+        const stopStatic = this.applyEffect(source, effect, gain)
+        gain.connect(this.buses.voice)
         this.startSpeaking()
         await new Promise<void>((resolve) => {
           source!.onended = () => resolve()
           source!.start()
         })
+        stopStatic()
         this.stopSpeaking()
       },
       setVolume: (volume) => {
@@ -183,6 +194,58 @@ export class SoundEngine {
         }
       },
     }
+  }
+
+  /**
+   * Connects source to output through the effect's filters. Radio also adds a quiet bed of
+   * static for the clip's duration; the returned function stops it.
+   */
+  private applyEffect(source: AudioBufferSourceNode, effect: VoiceEffect, output: AudioNode): () => void {
+    if (effect === 'room') {
+      source.connect(output)
+      return () => {}
+    }
+    const filter = (type: BiquadFilterType, frequency: number, q = 0.7) => {
+      const node = this.ctx.createBiquadFilter()
+      node.type = type
+      node.frequency.value = frequency
+      node.Q.value = q
+      return node
+    }
+    if (effect === 'phone') {
+      // Narrow, slightly crunchy band like a cassette answering machine.
+      const shaper = this.ctx.createWaveShaper()
+      shaper.curve = softClipCurve(3)
+      source.connect(filter('highpass', 450)).connect(filter('lowpass', 3200)).connect(shaper).connect(output)
+      return () => {}
+    }
+    // Radio: band-limited voice plus a bed of static.
+    source.connect(filter('highpass', 300)).connect(filter('peaking', 1800, 1)).connect(filter('lowpass', 4200)).connect(output)
+    const noise = this.ctx.createBufferSource()
+    noise.buffer = this.noiseBuffer()
+    noise.loop = true
+    const noiseGain = this.ctx.createGain()
+    noiseGain.gain.value = 0.035
+    noise.connect(filter('bandpass', 2500, 0.5)).connect(noiseGain).connect(output)
+    noise.start()
+    return () => {
+      try {
+        noise.stop()
+      } catch {
+        // Already stopped.
+      }
+    }
+  }
+
+  private noise: AudioBuffer | undefined
+  private noiseBuffer(): AudioBuffer {
+    if (!this.noise) {
+      const length = this.ctx.sampleRate * 2
+      this.noise = this.ctx.createBuffer(1, length, this.ctx.sampleRate)
+      const data = this.noise.getChannelData(0)
+      for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1
+    }
+    return this.noise
   }
 
   /** Stereo noise with an exponential tail: a cheap, smooth reverb impulse. */
@@ -221,4 +284,13 @@ export class SoundEngine {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
+}
+
+function softClipCurve(amount: number): Float32Array<ArrayBuffer> {
+  const curve = new Float32Array(256)
+  for (let i = 0; i < curve.length; i++) {
+    const x = (i / (curve.length - 1)) * 2 - 1
+    curve[i] = Math.tanh(amount * x) / Math.tanh(amount)
+  }
+  return curve
 }

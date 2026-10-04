@@ -33,6 +33,9 @@ const SEARCH_SOUND: Record<RoomObjectData['kind'], SfxKey> = {
   clock: 'search-clock',
   trash_can: 'search-trash',
   lockbox: 'search-lockbox',
+  answering_machine: 'search-answering_machine',
+  radio: 'search-radio',
+  music_box: 'search-music_box',
   door: 'locked-rattle',
 }
 

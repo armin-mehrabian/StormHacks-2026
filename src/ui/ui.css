@@ -498,3 +498,167 @@ button.hud-item:hover {
   color: var(--danger);
   text-shadow: 0 4px 0 #5a1414, 0 0 24px #ff5a5a55;
 }
+
+/* Memory transcript: a dark cassette-label card instead of paper. */
+.page-card.transcript {
+  background: linear-gradient(#1d1830, #120e1f);
+  color: var(--ink);
+  clip-path: none;
+  border: 3px solid var(--panel-edge);
+  box-shadow: inset 0 0 0 2px #00000080, 0 0 0 3px #000, 0 20px 60px #000;
+  transform: none;
+  animation: fade-in 0.3s ease-out;
+}
+
+.page-card.transcript .page-title {
+  color: var(--hint);
+}
+
+.page-card.transcript .page-title::before {
+  content: '● ';
+  color: var(--danger);
+  animation: blink 1s steps(2) infinite;
+}
+
+.page-card.transcript .page-text {
+  font: 28px/1.25 var(--font-body);
+  font-style: italic;
+}
+
+.page-card.transcript .overlay-hint {
+  color: var(--ink-dim);
+}
+
+/* ---------------------------------------------------------------- Intro */
+
+.intro {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  z-index: 30;
+  cursor: pointer;
+  transition: opacity 0.7s ease;
+}
+
+.intro.leaving {
+  opacity: 0;
+}
+
+.intro-lines {
+  max-width: min(86vw, 720px);
+  text-align: center;
+}
+
+.intro-line {
+  min-height: 1.2em;
+  margin: 0 0 18px;
+  font: 32px/1.2 var(--font-body);
+  color: var(--ink);
+  text-shadow: 0 0 18px #b18cff55;
+}
+
+.intro-time {
+  font: 18px var(--font-pixel);
+  color: var(--gold);
+  letter-spacing: 0.15em;
+}
+
+.intro-skip {
+  position: absolute;
+  bottom: 24px;
+  font: 18px var(--font-body);
+  color: #ffffff40;
+}
+
+.ui-button:disabled {
+  cursor: wait;
+  filter: grayscale(0.6) brightness(0.7);
+  animation: none;
+}
+
+/* ---------------------------------------------------------------- Dream feel */
+
+/* Mood tint per dream (body[data-mood]) and slow drifting haze over the room. */
+.dream-haze {
+  position: fixed;
+  inset: -10%;
+  pointer-events: none;
+  z-index: 1;
+  mix-blend-mode: soft-light;
+  opacity: 0.55;
+  background:
+    radial-gradient(ellipse at 20% 30%, var(--mood) 0%, transparent 45%),
+    radial-gradient(ellipse at 80% 70%, var(--mood) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, transparent 30%, var(--mood-edge) 100%);
+  animation: haze-drift 18s ease-in-out infinite alternate;
+}
+
+@keyframes haze-drift {
+  from { transform: translate(-2%, -1%) scale(1); }
+  to { transform: translate(2%, 1.5%) scale(1.06); }
+}
+
+body { --mood: #8a5cff; --mood-edge: #2a1450; }
+body[data-mood='blue'] { --mood: #4f8cff; --mood-edge: #0f2350; }
+body[data-mood='amber'] { --mood: #ffb347; --mood-edge: #4a2a08; }
+body[data-mood='green'] { --mood: #5fd38a; --mood-edge: #0f3a22; }
+body[data-mood='rose'] { --mood: #ff7aa8; --mood-edge: #4a1428; }
+
+/* The dream collapsing: the last 20 seconds glitch and shift colour. */
+body.dream-collapse #game canvas {
+  animation: collapse 0.9s steps(6) infinite;
+}
+
+@keyframes collapse {
+  0% { filter: none; transform: translate(0, 0); }
+  20% { filter: hue-rotate(25deg) saturate(1.4); transform: translate(-3px, 1px); }
+  40% { filter: none; transform: translate(2px, -1px); }
+  60% { filter: hue-rotate(-20deg) contrast(1.2); transform: translate(-1px, 2px); }
+  80% { filter: blur(0.6px); transform: translate(1px, 0); }
+  100% { filter: none; transform: translate(0, 0); }
+}
+
+/* ---------------------------------------------------------------- Dream journal */
+
+.journal {
+  width: min(86vw, 560px);
+  padding: 22px 26px 20px;
+  text-align: left;
+  color: var(--paper-ink);
+  background:
+    radial-gradient(ellipse at 20% 15%, #fff8e6 0%, transparent 60%),
+    var(--paper);
+  box-shadow: 0 16px 40px #000c;
+  transform: rotate(-0.8deg);
+}
+
+.journal-heading {
+  margin-bottom: 10px;
+  font: 10px var(--font-pixel);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: #6b5a44;
+}
+
+.journal-text {
+  margin: 0;
+  font: 21px/1.45 var(--font-paper);
+}
+
+.screen-buttons {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.ui-button.secondary {
+  color: var(--ink);
+  background: #3a2c55;
+  box-shadow: inset 0 -5px 0 #241a38, 0 0 0 3px #000;
+  animation: none;
+}

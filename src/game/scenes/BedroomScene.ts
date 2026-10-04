@@ -1,7 +1,7 @@
 import Phaser from 'phaser'
-import { ROOM_COLS, ROOM_ROWS } from '../../shared/blueprint.ts'
-import type { BlueprintItem } from '../../shared/blueprint.ts'
-import type { GameEvent } from '../../shared/contract.ts'
+import { ROOM_COLS, ROOM_ROWS, memoryEffect } from '../../shared/blueprint.ts'
+import type { BlueprintItem, Memory } from '../../shared/blueprint.ts'
+import type { GameEvent, RunStats } from '../../shared/contract.ts'
 import type { SoundEngine } from '../../audio/SoundEngine.ts'
 import type { CodeLock } from '../../ui/CodeLock.ts'
 import type { EndScreen } from '../../ui/EndScreen.ts'
@@ -31,6 +31,7 @@ import { Lighting } from '../lighting.ts'
 import type { LightSource } from '../lighting.ts'
 import { layoutRoom } from '../rooms/layout.ts'
 import type { RoomData, RoomObjectData } from '../rooms/types'
+import { TIME_LIMIT_MS } from '../state.ts'
 import type { GameState } from '../state.ts'
 import { RoomAudio } from '../roomAudio.ts'
 import { PlayerWatcher } from '../watcher.ts'
@@ -43,6 +44,8 @@ const INTERACT_RANGE = 26
 const CAMERA_ZOOM = 2
 const STEP_MS = 160
 const LOW_TIME_MS = 60_000
+/** The dream visibly glitches in its final seconds. */
+const COLLAPSE_MS = 20_000
 
 // Feet hitbox: the sprite is drawn above it, so the player can stand "in front" of things.
 const FEET_W = 14
@@ -76,9 +79,15 @@ export interface BedroomUi {
 export interface BedroomSceneData {
   state: GameState
   ui: BedroomUi
-  /** Speaks page text aloud. Fire-and-forget. */
-  readAloud: (text: string) => void
+  /** Narration hooks the scene drives directly. Fire-and-forget. */
+  voice: {
+    readAloud(text: string): void
+    prefetchMemories(memories: { objectId: string; memory: Memory }[]): void
+    playMemory(objectId: string, memory: Memory): void
+  }
   sound: SoundEngine
+  /** Called once when the run ends, with what happened. */
+  onEnd: (stats: RunStats) => void
 }
 
 interface MoveKeys {
@@ -93,7 +102,11 @@ export class BedroomScene extends Phaser.Scene {
 
   private state!: GameState
   private ui!: BedroomUi
-  private readAloud!: (text: string) => void
+  private voice!: BedroomSceneData['voice']
+  private readonly heardMemories = new Set<string>()
+  private onEnd!: (stats: RunStats) => void
+  private wrongCodes = 0
+  private hintsGiven = 0
   private soundEngine!: SoundEngine
   private audio!: RoomAudio
   private watcher!: PlayerWatcher
@@ -120,7 +133,8 @@ export class BedroomScene extends Phaser.Scene {
   init(data: BedroomSceneData): void {
     this.state = data.state
     this.ui = data.ui
-    this.readAloud = data.readAloud
+    this.voice = data.voice
+    this.onEnd = data.onEnd
     this.soundEngine = data.sound
     this.room = layoutRoom(data.state.blueprint)
     this.interactables = []
@@ -143,6 +157,10 @@ export class BedroomScene extends Phaser.Scene {
     this.createEffects()
     this.audio = new RoomAudio(this.soundEngine, room, decor, () => this.lightning())
     this.audio.start()
+    // Generate memory voices now so they play instantly when found.
+    this.voice.prefetchMemories(
+      this.state.blueprint.objects.flatMap((o) => (o.memory ? [{ objectId: o.id, memory: o.memory }] : [])),
+    )
     this.createInput()
 
     const camera = this.cameras.main
@@ -151,6 +169,7 @@ export class BedroomScene extends Phaser.Scene {
     camera.setRoundPixels(true)
     camera.startFollow(this.sprite, true, 0.12, 0.12)
     camera.fadeIn(1200, 0, 0, 0)
+    document.body.dataset.mood = this.state.blueprint.dreamer.mood
 
     this.ui.hud.setInventory(this.state.inventoryItems())
     this.ui.hud.setTime(this.state.timeRemainingMs)
@@ -370,6 +389,7 @@ export class BedroomScene extends Phaser.Scene {
     this.ui.hud.setTime(remaining)
     const low = remaining <= LOW_TIME_MS
     document.body.classList.toggle('time-low', low)
+    document.body.classList.toggle('dream-collapse', remaining <= COLLAPSE_MS)
     this.lighting.setDread(low ? 1 - remaining / LOW_TIME_MS : 0)
   }
 
@@ -420,6 +440,12 @@ export class BedroomScene extends Phaser.Scene {
 
     const description = this.state.description(object.id)
     const result = this.state.inspect(object.id)
+    const memory = this.state.object(object.id)?.memory
+    if (memory && (result.type === 'opened' || result.type === 'empty')) {
+      this.ui.notice.show(description)
+      this.playMemory(object, memory)
+      return
+    }
     if (result.type === 'needs_key') this.audio.locked()
     else if (result.type !== 'escaped') this.audio.search(object.kind)
     if ((result.type === 'opened' || result.type === 'escaped') && result.usedKey) this.audio.keyUsed()
@@ -464,6 +490,7 @@ export class BedroomScene extends Phaser.Scene {
   private submitCode(object: RoomObjectData, code: string): boolean {
     const result = this.state.enterCode(object.id, code)
     if (result.type === 'wrong') {
+      this.wrongCodes++
       this.audio.codeWrong()
       this.cameras.main.shake(180, 0.006)
       this.cameras.main.flash(160, 90, 10, 10)
@@ -501,8 +528,25 @@ export class BedroomScene extends Phaser.Scene {
       this.emit({ type: 'cipher_found', objectId: object.id, objectName: object.label, itemName: item.name })
     } else if (item.text) {
       // The narrator reads plain pages aloud while they are on screen.
-      this.readAloud(item.text)
+      this.voice.readAloud(item.text)
     }
+  }
+
+  /** Plays a voice from the dreamer's life, with its transcript on screen. */
+  private playMemory(object: RoomObjectData, memory: Memory): void {
+    const effect = object.kind !== 'door' ? memoryEffect(object.kind) : undefined
+    const source = effect === 'phone' ? 'Voicemail' : effect === 'radio' ? 'Radio' : 'Memory'
+    this.ui.pages.showTranscript(`${source} · ${memory.speakerName}`, memory.text)
+    this.voice.playMemory(object.id, memory)
+    if (this.heardMemories.has(object.id)) return
+    this.heardMemories.add(object.id)
+    this.watcher.noteProgress()
+    this.emit({
+      type: 'memory_heard',
+      objectId: object.id,
+      objectName: object.label,
+      detail: `${memory.speakerName} said: ${memory.text}`.slice(0, 300),
+    })
   }
 
   /** A burst of sparks and a warm flash for progress. */
@@ -530,12 +574,23 @@ export class BedroomScene extends Phaser.Scene {
     this.ui.codeLock.close()
     this.ui.pages.close()
     this.ui.hud.setTime(this.state.timeRemainingMs)
-    document.body.classList.remove('time-low')
+    document.body.classList.remove('time-low', 'dream-collapse')
     this.audio.finish(escaped)
     this.emit({ type: escaped ? 'escaped' : 'time_up' })
     if (escaped) this.cameras.main.fadeOut(1600, 255, 236, 200)
     else this.cameras.main.fadeOut(1600, 60, 0, 0)
-    this.ui.endScreen.show(escaped, this.state.timeRemainingMs)
+    this.ui.endScreen.show(escaped, this.state.timeRemainingMs, this.state.blueprint.dreamer)
+    const most = this.inspections.mostInspected()
+    this.onEnd({
+      escaped,
+      secondsLeft: Math.ceil(this.state.timeRemainingMs / 1000),
+      secondsUsed: Math.round((TIME_LIMIT_MS - this.state.timeRemainingMs) / 1000),
+      mostInspected: most && most.count > 1 ? { name: this.state.displayName(most.objectId), count: most.count } : undefined,
+      wrongCodes: this.wrongCodes,
+      hintsGiven: this.hintsGiven,
+      memoriesHeard: this.heardMemories.size,
+      itemsFound: this.state.inventoryItems().length,
+    })
   }
 
   /** A lightning flash through the windows; the thunder follows from RoomAudio. */
@@ -545,6 +600,7 @@ export class BedroomScene extends Phaser.Scene {
 
   /** Emits a GameEvent with the room context every event carries. */
   private emit(event: WatcherEvent | GameEvent): void {
+    if (event.type === 'near_solution' || event.type === 'stuck') this.hintsGiven++
     gameEvents.emit({
       ...event,
       roomId: this.room.id,

@@ -4,6 +4,7 @@
 
 import { API_PATHS, EVENT_TEXT_LIMITS, INITIAL_TIMEOUTS_MS, isNarratorEmotion, stripAudioTags } from '../shared/contract.ts'
 import type { GameEvent, GameEventType, NarratorEmotion, NarratorResponse } from '../shared/contract.ts'
+import type { Dreamer, Memory } from '../shared/blueprint.ts'
 import type { GameEventEmitter } from '../game/events.ts'
 import type { AudioManager, SpeechPriority } from '../audio/AudioManager.ts'
 import { requestVoice } from '../audio/requestVoice.ts'
@@ -22,11 +23,15 @@ const EVENT_PRIORITY: Record<GameEventType, SpeechPriority> = {
   near_solution: 'normal',
   stuck: 'normal',
   time_warning: 'normal',
+  memory_heard: 'normal',
   repeated_action: 'low',
   nothing_found: 'low',
   locked: 'low',
   wrong_code: 'low',
 }
+
+/** Memory clips are long and prefetched in the background, so they get a longer timeout. */
+const MEMORY_TIMEOUT_MS = 20_000
 
 /** Minimum gap since the last narrated event, per priority. Initial implementation choices. */
 const COOLDOWN_MS: Record<SpeechPriority, number> = { high: 0, normal: 3000, low: 7000 }
@@ -46,6 +51,8 @@ export class NarratorManager {
   private readonly recentLines: string[] = []
   private lastNarratedAt = Number.NEGATIVE_INFINITY
   private inFlight = 0
+  private dreamer: Dreamer | undefined
+  private readonly memoryClips = new Map<string, Promise<Blob | null>>()
 
   constructor(events: GameEventEmitter, audio: AudioManager, subtitles: SubtitleView, now: () => number = Date.now) {
     this.events = events
@@ -61,10 +68,50 @@ export class NarratorManager {
     })
   }
 
-  /** Speaks text verbatim, e.g. a page the player is reading. No subtitle: the text is on screen. */
+  /** Sets whose dream this is: their inner voice speaks every line, in character. */
+  setDreamer(dreamer: Dreamer): void {
+    this.dreamer = dreamer
+  }
+
+  /**
+   * Starts generating memory clips in the background so they play instantly later.
+   * Keyed by the object that holds the memory.
+   */
+  prefetchMemories(memories: { objectId: string; memory: Memory }[]): void {
+    for (const { objectId, memory } of memories) {
+      if (this.memoryClips.has(objectId)) continue
+      this.memoryClips.set(
+        objectId,
+        requestVoice({ line: memory.text, emotion: 'neutral', speaker: memory.speaker }, MEMORY_TIMEOUT_MS),
+      )
+    }
+  }
+
+  /**
+   * Plays a memory clip (prefetched if possible). onStart fires when it begins, so the
+   * transcript can appear in sync. Resolves false if there is no audio (muted or failed).
+   */
+  async playMemory(objectId: string, memory: Memory, tagEffect: (clip: Blob) => void, onStart: () => void): Promise<boolean> {
+    if (this.audio.isMuted()) return false
+    let clip = this.memoryClips.get(objectId)
+    if (!clip) {
+      clip = requestVoice({ line: memory.text, emotion: 'neutral', speaker: memory.speaker }, MEMORY_TIMEOUT_MS)
+      this.memoryClips.set(objectId, clip)
+    }
+    const audio = await clip
+    if (!audio) {
+      // Let a later inspect retry instead of caching the failure.
+      this.memoryClips.delete(objectId)
+      return false
+    }
+    tagEffect(audio)
+    return this.audio.enqueue(audio, 'high', onStart)
+  }
+
+  /** Speaks text verbatim in the dreamer's voice, e.g. a page. No subtitle: the text is on screen. */
   async readAloud(text: string): Promise<void> {
     if (this.audio.isMuted()) return
-    const voice = await requestVoice({ line: text, emotion: 'neutral' })
+    const voice = await requestVoice({ line: text, emotion: 'neutral', speaker: this.dreamer?.voice })
     if (voice) this.audio.enqueue(voice, 'high')
   }
 
@@ -78,7 +125,7 @@ export class NarratorManager {
     this.inFlight++
 
     try {
-      const narration = await fetchNarration({ ...event, recentLines: [...this.recentLines] })
+      const narration = await fetchNarration({ ...event, ...this.dreamerContext(), recentLines: [...this.recentLines] })
       if (!narration.shouldSpeak) return
       // Audio tags like [sighs] are acted by the voice, never shown. They stay in the
       // remembered lines so Gemini can vary them.
@@ -91,7 +138,7 @@ export class NarratorManager {
         show()
         return
       }
-      const voice = await requestVoice({ line: narration.line, emotion: narration.emotion })
+      const voice = await requestVoice({ line: narration.line, emotion: narration.emotion, speaker: this.dreamer?.voice })
       if (!voice) {
         show()
         return
@@ -100,6 +147,16 @@ export class NarratorManager {
       this.audio.enqueue(voice, priority, show)
     } finally {
       this.inFlight--
+    }
+  }
+
+  /** Who the inner voice belongs to; the secret (name, situation) is only spoken on waking. */
+  private dreamerContext(): Pick<GameEvent, 'dreamerPersona' | 'dreamerSecret'> {
+    const d = this.dreamer
+    if (!d) return {}
+    return {
+      dreamerPersona: `${d.age} years old. ${d.personality}`.slice(0, EVENT_TEXT_LIMITS.field),
+      dreamerSecret: `My name is ${d.name}. ${d.situation}`.slice(0, EVENT_TEXT_LIMITS.field),
     }
   }
 

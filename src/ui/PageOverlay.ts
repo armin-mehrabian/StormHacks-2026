@@ -1,4 +1,5 @@
-// Shows a found page as a sheet of paper. Cipher pages show their encrypted text.
+// Shows a found page as a sheet of paper (cipher pages show their encrypted text), or the
+// transcript of a memory being played.
 
 import { pageDisplayText } from '../shared/blueprint.ts'
 import type { BlueprintItem } from '../shared/blueprint.ts'
@@ -6,6 +7,7 @@ import { modalClosed, modalOpened } from './modal.ts'
 
 export class PageOverlay {
   private readonly root: HTMLDivElement
+  private readonly card: HTMLDivElement
   private readonly title: HTMLHeadingElement
   private readonly text: HTMLParagraphElement
   private onClose: (() => void) | undefined
@@ -21,6 +23,7 @@ export class PageOverlay {
     this.root.className = 'overlay'
     this.root.hidden = true
     const card = document.createElement('div')
+    this.card = card
     card.className = 'page-card'
     this.title = document.createElement('h2')
     this.title.className = 'page-title'
@@ -40,11 +43,21 @@ export class PageOverlay {
   }
 
   show(item: BlueprintItem, onClose?: () => void): void {
+    this.open(item.name, pageDisplayText(item), { cipher: Boolean(item.cipherShift), onClose })
+  }
+
+  /** A memory's words, e.g. "Voicemail · Mom", while its voice plays. */
+  showTranscript(title: string, text: string): void {
+    this.open(title, `"${text}"`, { transcript: true })
+  }
+
+  private open(title: string, text: string, options: { cipher?: boolean; transcript?: boolean; onClose?: () => void }): void {
     if (this.isOpen) this.close()
-    this.title.textContent = item.name
-    this.text.textContent = pageDisplayText(item)
-    this.text.classList.toggle('cipher', Boolean(item.cipherShift))
-    this.onClose = onClose
+    this.title.textContent = title
+    this.text.textContent = text
+    this.text.classList.toggle('cipher', Boolean(options.cipher))
+    this.card.classList.toggle('transcript', Boolean(options.transcript))
+    this.onClose = options.onClose
     this.root.hidden = false
     modalOpened()
     window.addEventListener('keydown', this.onKeyDown)

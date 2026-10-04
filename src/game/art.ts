@@ -282,6 +282,40 @@ const FURNITURE: Record<RoomObjectData['kind'], (ctx: Ctx, w: number, h: number)
     rect(ctx, 8, 8, 1, 3, C.gold)
     rect(ctx, 10, 8, 1, 3, C.goldHi)
   },
+  answering_machine(ctx) {
+    rect(ctx, 1, 6, 14, 9, C.ink) // body
+    rect(ctx, 2, 7, 12, 7, C.metalDark)
+    rect(ctx, 2, 7, 12, 1, C.metal)
+    rect(ctx, 3, 9, 6, 3, C.ink) // tape window
+    rect(ctx, 4, 10, 1, 1, C.metalHi)
+    rect(ctx, 7, 10, 1, 1, C.metalHi)
+    rect(ctx, 11, 9, 2, 2, '#ff4d4d') // blinking message light
+    rect(ctx, 11, 9, 1, 1, '#ffb0b0')
+    rect(ctx, 2, 3, 8, 3, C.ink) // handset
+    rect(ctx, 2, 3, 2, 2, C.metalDark)
+    rect(ctx, 8, 3, 2, 2, C.metalDark)
+  },
+  radio(ctx) {
+    rect(ctx, 1, 5, 14, 10, C.woodDark)
+    rect(ctx, 2, 6, 12, 8, C.woodMid)
+    rect(ctx, 2, 6, 12, 1, C.woodHi)
+    rect(ctx, 3, 8, 6, 5, C.cream) // speaker grille
+    for (let y = 9; y < 13; y += 2) rect(ctx, 3, y, 6, 1, C.creamShade)
+    rect(ctx, 10, 8, 3, 3, C.gold) // dial
+    rect(ctx, 11, 9, 1, 1, C.ink)
+    rect(ctx, 10, 12, 3, 1, C.goldHi)
+    rect(ctx, 11, 1, 1, 4, C.metal) // antenna
+  },
+  music_box(ctx) {
+    rect(ctx, 2, 7, 12, 8, C.woodDark)
+    rect(ctx, 3, 8, 10, 6, C.red)
+    rect(ctx, 3, 8, 10, 1, C.redHi)
+    rect(ctx, 5, 10, 6, 2, C.gold) // brass plate
+    rect(ctx, 2, 3, 12, 4, C.wood) // open lid
+    rect(ctx, 3, 4, 10, 2, C.cream) // mirror inside lid
+    rect(ctx, 7, 5, 2, 3, C.goldHi) // tiny dancer
+    rect(ctx, 14, 10, 2, 1, C.metalHi) // crank
+  },
   door(ctx, w, h) {
     rect(ctx, 0, 0, w, h, C.woodDark) // frame
     rect(ctx, 2, 1, w - 4, h - 1, C.wood)

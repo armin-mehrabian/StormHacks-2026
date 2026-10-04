@@ -2,9 +2,13 @@
 // See docs/INTEGRATION_CONTRACT.md. Change types here, never in a local copy.
 // This file must stay free of DOM and Node APIs: both tsconfigs compile it.
 
+import type { Dreamer, RoomBlueprint } from './blueprint.ts'
+
 export const API_PATHS = {
   narrator: '/api/narrator',
   voice: '/api/voice',
+  dream: '/api/dream',
+  journal: '/api/journal',
 } as const
 
 // Initial implementation choice, not a settled product decision.
@@ -28,6 +32,8 @@ export const GAME_EVENT_TYPES = [
   /** Engine-chosen hint: player has done nothing useful for a while. */
   'stuck',
   'time_warning',
+  /** A memory (voicemail, radio, music box) just finished playing. */
+  'memory_heard',
   'escaped',
   'time_up',
 ] as const
@@ -35,9 +41,32 @@ export type GameEventType = (typeof GAME_EVENT_TYPES)[number]
 
 /** Text limits for event context sent to the server. */
 export const EVENT_TEXT_LIMITS = {
-  field: 200,
+  field: 300,
   recentLines: 5,
 } as const
+
+/**
+ * Voices that can speak: the dreamer's inner voice (self_*) and the people in their
+ * memories. The server maps each role to an ElevenLabs voice. Initial implementation choice.
+ */
+export const CAST_ROLES = [
+  'self_f',
+  'self_m',
+  'mom',
+  'dad',
+  'friend_f',
+  'friend_m',
+  'grandma',
+  'grandpa',
+  'radio_host',
+  'teacher',
+  'stranger',
+] as const
+export type CastRole = (typeof CAST_ROLES)[number]
+
+export function isCastRole(value: unknown): value is CastRole {
+  return typeof value === 'string' && (CAST_ROLES as readonly string[]).includes(value)
+}
 
 // Initial implementation choice, not a settled product decision.
 export const NARRATOR_EMOTIONS = ['sarcastic', 'hint', 'warning', 'praise', 'neutral'] as const
@@ -72,6 +101,10 @@ export interface GameEvent {
   detail?: string
   /** The narrator's last few lines, so it can avoid repeating itself. */
   recentLines?: string[]
+  /** Who the dreamer is: personality and feelings, for the inner voice. */
+  dreamerPersona?: string
+  /** The dreamer's name and situation. The inner voice may only say it on 'escaped'. */
+  dreamerSecret?: string
 }
 
 /** POST /api/narrator: request body is a GameEvent. */
@@ -86,7 +119,43 @@ export interface NarratorResponse {
 export interface VoiceRequest {
   line: string
   emotion: NarratorEmotion
+  /** Who speaks; defaults to the configured narrator voice. */
+  speaker?: CastRole
 }
+
+/** POST /api/dream: no body. The blueprint is always valid; source says where it came from. */
+export interface DreamResponse {
+  blueprint: RoomBlueprint
+  source: 'gemini' | 'fallback'
+}
+
+/** What happened in a run, for the dream journal. */
+export interface RunStats {
+  escaped: boolean
+  secondsUsed: number
+  secondsLeft: number
+  /** The object inspected most, and how often. */
+  mostInspected?: { name: string; count: number }
+  wrongCodes: number
+  hintsGiven: number
+  memoriesHeard: number
+  itemsFound: number
+}
+
+/** POST /api/journal */
+export interface JournalRequest {
+  dreamer: Dreamer
+  title: string
+  stats: RunStats
+}
+
+export interface JournalResponse {
+  /** A short diary entry, in the dreamer's words, written the morning after. */
+  entry: string
+}
+
+/** Dream generation can take a while; the title screen covers it. Initial choice. */
+export const DREAM_TIMEOUT_MS = 40_000
 
 export interface ApiError {
   error: string
@@ -123,6 +192,8 @@ export function isGameEvent(value: unknown): value is GameEvent {
     optionalText(v.roomTitle) &&
     optionalText(v.hint) &&
     optionalText(v.detail) &&
+    optionalText(v.dreamerPersona) &&
+    optionalText(v.dreamerSecret) &&
     optionalNumber(v.count) &&
     optionalNumber(v.timeRemainingSeconds) &&
     optionalNumber(v.hintLevel) &&
@@ -136,5 +207,10 @@ export function isGameEvent(value: unknown): value is GameEvent {
 export function isVoiceRequest(value: unknown): value is VoiceRequest {
   if (typeof value !== 'object' || value === null) return false
   const v = value as Record<string, unknown>
-  return typeof v.line === 'string' && v.line.length > 0 && isNarratorEmotion(v.emotion)
+  return (
+    typeof v.line === 'string' &&
+    v.line.length > 0 &&
+    isNarratorEmotion(v.emotion) &&
+    (v.speaker === undefined || isCastRole(v.speaker))
+  )
 }

@@ -4,6 +4,7 @@ import { ElevenLabsClient, ElevenLabsTimeoutError } from '@elevenlabs/elevenlabs
 import type { VoiceSettings } from '@elevenlabs/elevenlabs-js/api'
 import { API_PATHS, INITIAL_TIMEOUTS_MS, isVoiceRequest } from '../../src/shared/contract.ts'
 import type { ApiError, NarratorEmotion } from '../../src/shared/contract.ts'
+import { voiceIdFor } from '../voices.ts'
 
 export const voiceRouter = Router()
 
@@ -37,14 +38,14 @@ voiceRouter.post(API_PATHS.voice, async (req, res) => {
     sendError(res, 400, 'Invalid voice request')
     return
   }
-  const { line, emotion } = req.body
+  const { line, emotion, speaker } = req.body
   if (line.length > MAX_LINE_LENGTH) {
     sendError(res, 400, 'Invalid voice request')
     return
   }
 
   const apiKey = process.env.ELEVENLABS_API_KEY?.trim()
-  const voiceId = process.env.ELEVENLABS_VOICE_ID?.trim()
+  const voiceId = voiceIdFor(speaker)
   if (!apiKey || !voiceId) {
     sendError(res, 503, 'Voice is not configured')
     return
