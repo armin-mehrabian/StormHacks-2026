@@ -9,9 +9,10 @@ export class Hud {
   private readonly timer: HTMLDivElement
   private readonly inventory: HTMLDivElement
   private readonly onPageClick: (item: BlueprintItem) => void
+  private readonly notebook: HTMLButtonElement
   private shownSeconds = -1
 
-  constructor(onPageClick: (item: BlueprintItem) => void, parent: HTMLElement = document.body) {
+  constructor(onPageClick: (item: BlueprintItem) => void, onNotebookClick: () => void, parent: HTMLElement = document.body) {
     this.onPageClick = onPageClick
     this.root = document.createElement('div')
     this.root.className = 'hud'
@@ -19,7 +20,16 @@ export class Hud {
     this.timer.className = 'hud-timer'
     this.inventory = document.createElement('div')
     this.inventory.className = 'hud-inventory'
-    this.root.append(this.timer, this.inventory)
+    this.notebook = document.createElement('button')
+    this.notebook.type = 'button'
+    this.notebook.className = 'hud-item hud-notebook'
+    this.notebook.title = 'Dream notebook (N)'
+    this.notebook.addEventListener('click', onNotebookClick)
+    this.setNotebookCount(0)
+    const left = document.createElement('div')
+    left.className = 'hud-left'
+    left.append(this.timer, this.notebook)
+    this.root.append(left, this.inventory)
     parent.appendChild(this.root)
   }
 
@@ -30,6 +40,15 @@ export class Hud {
     const minutes = Math.floor(seconds / 60)
     this.timer.textContent = `${minutes}:${String(seconds % 60).padStart(2, '0')}`
     this.timer.classList.toggle('low', remainingMs <= LOW_TIME_MS)
+  }
+
+  setNotebookCount(count: number): void {
+    this.notebook.replaceChildren(icon('📓'), `Notebook (N)${count ? ` · ${count}` : ''}`)
+    if (count) {
+      this.notebook.classList.remove('bump')
+      void this.notebook.offsetWidth
+      this.notebook.classList.add('bump')
+    }
   }
 
   /** Appends newly collected items only, so existing slots don't replay their pop-in. */

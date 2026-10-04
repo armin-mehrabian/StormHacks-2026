@@ -27,6 +27,10 @@ export const OBJECT_KINDS = [
   'answering_machine',
   'radio',
   'music_box',
+  // Story puzzle objects.
+  'mirror',
+  'toy_piano',
+  'fear',
 ] as const
 export type ObjectKind = (typeof OBJECT_KINDS)[number]
 
@@ -60,9 +64,19 @@ export const KIND_SPECS: Record<ObjectKind, KindSpec> = {
   clock: { width: 1, height: 1, placement: 'top', solid: false, lockable: false, hangs: true },
   trash_can: { width: 1, height: 1, placement: 'any', solid: true, lockable: false },
   lockbox: { width: 1, height: 1, placement: 'any', solid: true, lockable: true },
-  answering_machine: { width: 1, height: 1, placement: 'any', solid: true, lockable: false },
-  radio: { width: 1, height: 1, placement: 'any', solid: true, lockable: false },
-  music_box: { width: 1, height: 1, placement: 'any', solid: true, lockable: false },
+  answering_machine: { width: 1, height: 1, placement: 'any', solid: true, lockable: true },
+  radio: { width: 1, height: 1, placement: 'any', solid: true, lockable: true },
+  music_box: { width: 1, height: 1, placement: 'any', solid: true, lockable: true },
+  mirror: { width: 1, height: 1, placement: 'top', solid: false, lockable: true, hangs: true },
+  toy_piano: { width: 2, height: 1, placement: 'any', solid: true, lockable: true },
+  fear: { width: 2, height: 2, placement: 'floor', solid: false, lockable: true },
+}
+
+/** Lock types that only make sense on one kind, and kinds that require them. */
+export const KIND_LOCKS: Partial<Record<ObjectKind, Lock['type']>> = {
+  mirror: 'identity',
+  toy_piano: 'melody',
+  fear: 'fear',
 }
 
 /** Kinds that can hold a memory, and how the memory sounds when played. */
@@ -127,10 +141,36 @@ export function slotAllows(slot: SlotId, placement: Placement): boolean {
 // Blueprint shape
 // ---------------------------------------------------------------------------------------
 
+/** Notes the toy piano can play, and the music box can hum. */
+export const NOTES = ['C', 'D', 'E', 'G', 'A'] as const
+
+/** One blank on the identity board ("My name is ___"). */
+export interface IdentityQuestion {
+  prompt: string
+  answer: string
+  /** Two plausible wrong answers. */
+  decoys: string[]
+  /** Objects or pages whose text contains the answer. */
+  clueIds: string[]
+}
+
 export type Lock =
-  | { type: 'key'; keyId: string }
+  /** Needs an item the player holds: a key, a cassette, batteries... Used automatically. */
+  | { type: 'item'; itemId: string }
   /** Digits only. clueIds[i] names the object or page whose text contains code[i]. */
   | { type: 'code'; code: string; clueIds: string[] }
+  /** A 3-8 letter word from the story (a pet's name, a song) that appears in a clue. */
+  | { type: 'word'; word: string; clueIds: string[] }
+  /** A story question with three options; the right one appears in a clue. */
+  | { type: 'choice'; question: string; options: string[]; answer: number; clueIds: string[] }
+  /** Replay the melody the music box (sourceId) plays. Toy piano only. */
+  | { type: 'melody'; notes: string; sourceId: string }
+  /** "Who am I?" Mirror only. */
+  | { type: 'identity'; questions: IdentityQuestion[] }
+  /** Facing the fear: choose what to tell yourself. supportIds are the memories behind it. Fear only. */
+  | { type: 'fear'; prompt: string; options: string[]; answer: number; supportIds: string[] }
+  /** Opens once another step (stepId) is done, e.g. the door after facing the fear. */
+  | { type: 'step'; stepId: string }
 
 /** A voice from the dreamer's life, played by a memory object. */
 export interface Memory {
@@ -153,6 +193,10 @@ export interface BlueprintObject {
   lock?: Lock
   /** Only on memory kinds (answering machine, radio, music box). */
   memory?: Memory
+  /** Which act it appears in (1-3, default 1). Later acts fade in as the dream shifts. */
+  act?: 1 | 2 | 3
+  /** Music box only: the melody it plays, as notes from NOTES (e.g. "EDCD"). */
+  melody?: string
 }
 
 export const DREAM_MOODS = ['violet', 'blue', 'amber', 'green', 'rose'] as const
@@ -174,7 +218,8 @@ export interface Dreamer {
 
 export interface BlueprintItem {
   id: string
-  kind: 'key' | 'page'
+  /** key and tool items open item locks; pages are read. */
+  kind: 'key' | 'tool' | 'page'
   name: string
   /** Page text. For cipher pages this is the plaintext; the engine encrypts it. */
   text?: string
@@ -210,9 +255,9 @@ export interface RoomBlueprint {
 export const BLUEPRINT_LIMITS = {
   minObjects: 5,
   maxObjects: 12,
-  maxItems: 6,
+  maxItems: 8,
   minSteps: 3,
-  maxSteps: 7,
+  maxSteps: 10,
   maxTitle: 60,
   maxIntro: 160,
   maxName: 30,
@@ -223,6 +268,12 @@ export const BLUEPRINT_LIMITS = {
   minHintLines: 2,
   maxHintLines: 4,
   maxMemoryText: 260,
+  maxQuestion: 120,
+  maxOption: 120,
+  maxAnswer: 40,
+  minIdentityQuestions: 2,
+  maxIdentityQuestions: 4,
+  penaltyMs: 15_000,
   maxSituation: 160,
   maxPersonality: 160,
 } as const
@@ -287,6 +338,7 @@ export function validateBlueprint(bp: RoomBlueprint): ValidationResult {
     if (items.has(item.id) || item.id === DOOR_ID) err(`duplicate or reserved item id "${item.id}"`)
     items.set(item.id, item)
     if (!item.name || item.name.length > L.maxName) err(`item "${item.id}" name missing or too long`)
+    if (!['key', 'tool', 'page'].includes(item.kind)) err(`item "${item.id}" has unknown kind "${item.kind}"`)
     if (item.kind === 'page') {
       if (!item.text) err(`page "${item.id}" has no text`)
       else if (item.text.length > L.maxPageText) err(`page "${item.id}" text too long`)
@@ -319,7 +371,13 @@ export function validateBlueprint(bp: RoomBlueprint): ValidationResult {
     if (!obj.description || obj.description.length > L.maxDescription) {
       err(`object "${obj.id}" description missing or too long`)
     }
+    if (obj.act !== undefined && ![1, 2, 3].includes(obj.act)) err(`object "${obj.id}" act must be 1, 2, or 3`)
     if (obj.lock && !spec.lockable) err(`object "${obj.id}" (${obj.kind}) cannot be locked`)
+    const required = KIND_LOCKS[obj.kind]
+    if (required && obj.lock?.type !== required) err(`object "${obj.id}" (${obj.kind}) needs a ${required} lock`)
+    for (const [kind, type] of Object.entries(KIND_LOCKS)) {
+      if (obj.lock?.type === type && obj.kind !== kind) err(`object "${obj.id}": ${type} locks only go on a ${kind}`)
+    }
     if (obj.memory) {
       if (!memoryEffect(obj.kind)) err(`object "${obj.id}" (${obj.kind}) cannot hold a memory`)
       if (!obj.memory.text || obj.memory.text.length > L.maxMemoryText) err(`memory in "${obj.id}" missing or too long`)
@@ -328,6 +386,10 @@ export function validateBlueprint(bp: RoomBlueprint): ValidationResult {
     } else if (memoryEffect(obj.kind)) {
       err(`memory object "${obj.id}" (${obj.kind}) has no memory`)
     }
+    if (obj.melody !== undefined) {
+      if (obj.kind !== 'music_box') err(`only a music box can have a melody ("${obj.id}")`)
+      if (!isMelody(obj.melody)) err(`melody of "${obj.id}" must be 3-6 notes from ${NOTES.join('')}`)
+    }
     if (obj.contains) {
       if (!items.has(obj.contains)) err(`object "${obj.id}" contains unknown item "${obj.contains}"`)
       if (containedBy.has(obj.contains)) err(`item "${obj.contains}" is in two objects`)
@@ -335,6 +397,7 @@ export function validateBlueprint(bp: RoomBlueprint): ValidationResult {
     }
   }
   if (!bp.door.description || bp.door.description.length > L.maxDescription) err('door description missing or too long')
+  if (['melody', 'identity', 'fear', 'choice'].includes(bp.door.lock.type)) err(`the door cannot have a ${bp.door.lock.type} lock`)
   for (const item of bp.items) {
     if (!containedBy.has(item.id)) err(`item "${item.id}" is not inside any object`)
   }
@@ -343,22 +406,89 @@ export function validateBlueprint(bp: RoomBlueprint): ValidationResult {
   const clueText = (id: string): string | undefined => {
     if (id === DOOR_ID) return bp.door.description
     const obj = objects.get(id)
-    if (obj) return obj.memory ? `${obj.description} ${obj.memory.text}` : obj.description
+    if (obj) return obj.memory ? `${obj.description} ${obj.memory.speakerName}: ${obj.memory.text}` : obj.description
     return items.get(id)?.text
   }
-  const checkLock = (ownerId: string, lock: Lock) => {
-    if (lock.type === 'key') {
-      const key = items.get(lock.keyId)
-      if (!key || key.kind !== 'key') err(`"${ownerId}" needs key "${lock.keyId}", which is not a key item`)
-      return
-    }
-    if (!/^\d{3,4}$/.test(lock.code)) err(`"${ownerId}" code must be 3-4 digits`)
-    if (lock.clueIds.length !== lock.code.length) err(`"${ownerId}" needs one clue per code digit`)
-    lock.clueIds.forEach((clueId, i) => {
+  const cluesMention = (ownerId: string, clueIds: string[], answer: string): boolean => {
+    let found = false
+    for (const clueId of clueIds) {
       const text = clueText(clueId)
       if (text === undefined) err(`"${ownerId}" clue "${clueId}" does not exist`)
-      else if (!text.includes(lock.code[i] ?? '')) err(`"${ownerId}" clue "${clueId}" does not contain digit ${lock.code[i]}`)
-    })
+      else if (mentions(text, answer)) found = true
+    }
+    return found
+  }
+  const checkOptions = (ownerId: string, options: string[], answer: number) => {
+    if (options.length !== 3) err(`"${ownerId}" needs exactly 3 options`)
+    if (!Number.isInteger(answer) || answer < 0 || answer >= options.length) err(`"${ownerId}" answer must be an option index`)
+    if (options.some((o) => !o || o.length > L.maxOption)) err(`"${ownerId}" has an empty or too-long option`)
+  }
+
+  const checkLock = (ownerId: string, lock: Lock) => {
+    switch (lock.type) {
+      case 'item': {
+        const item = items.get(lock.itemId)
+        if (!item || item.kind === 'page') err(`"${ownerId}" needs item "${lock.itemId}", which is not a key or tool`)
+        return
+      }
+      case 'code':
+        if (!/^\d{3,4}$/.test(lock.code)) err(`"${ownerId}" code must be 3-4 digits`)
+        if (lock.clueIds.length !== lock.code.length) err(`"${ownerId}" needs one clue per code digit`)
+        lock.clueIds.forEach((clueId, i) => {
+          const text = clueText(clueId)
+          if (text === undefined) err(`"${ownerId}" clue "${clueId}" does not exist`)
+          else if (!text.includes(lock.code[i] ?? '')) err(`"${ownerId}" clue "${clueId}" does not contain digit ${lock.code[i]}`)
+        })
+        return
+      case 'word':
+        if (!/^[A-Za-z]{3,8}$/.test(lock.word)) err(`"${ownerId}" word must be 3-8 letters`)
+        if (!lock.clueIds.length || !cluesMention(ownerId, lock.clueIds, lock.word)) err(`"${ownerId}" word "${lock.word}" is not in its clues`)
+        return
+      case 'choice':
+        if (!lock.question || lock.question.length > L.maxQuestion) err(`"${ownerId}" question missing or too long`)
+        checkOptions(ownerId, lock.options, lock.answer)
+        if (!cluesMention(ownerId, lock.clueIds, lock.options[lock.answer] ?? '\u0000')) err(`"${ownerId}" right answer is not in its clues`)
+        lock.options.forEach((option, i) => {
+          if (i !== lock.answer && lock.clueIds.some((id) => mentions(clueText(id) ?? '', option))) {
+            err(`"${ownerId}" wrong option "${option}" also appears in the clues`)
+          }
+        })
+        return
+      case 'melody': {
+        if (!isMelody(lock.notes)) err(`"${ownerId}" melody must be 3-6 notes from ${NOTES.join('')}`)
+        const source = objects.get(lock.sourceId)
+        if (!source || source.kind !== 'music_box' || source.melody !== lock.notes) {
+          err(`"${ownerId}" melody must match the melody of music box "${lock.sourceId}"`)
+        }
+        return
+      }
+      case 'identity':
+        if (lock.questions.length < L.minIdentityQuestions || lock.questions.length > L.maxIdentityQuestions) {
+          err(`"${ownerId}" needs ${L.minIdentityQuestions}-${L.maxIdentityQuestions} identity questions`)
+        }
+        lock.questions.forEach((q, i) => {
+          const label = `"${ownerId}" identity question ${i + 1}`
+          if (!q.prompt || q.prompt.length > L.maxQuestion) err(`${label} prompt missing or too long`)
+          if (!q.answer || q.answer.length > L.maxAnswer) err(`${label} answer missing or too long`)
+          if (q.decoys.length !== 2 || q.decoys.some((dc) => !dc || dc.length > L.maxAnswer || same(dc, q.answer))) {
+            err(`${label} needs 2 decoys different from the answer`)
+          }
+          if (!cluesMention(ownerId, q.clueIds, q.answer)) err(`${label} answer "${q.answer}" is not in its clues`)
+          for (const decoy of q.decoys) {
+            if (q.clueIds.some((id) => mentions(clueText(id) ?? '', decoy))) err(`${label} decoy "${decoy}" appears in its clues`)
+          }
+        })
+        return
+      case 'fear':
+        if (!lock.prompt || lock.prompt.length > L.maxQuestion) err(`"${ownerId}" fear prompt missing or too long`)
+        checkOptions(ownerId, lock.options, lock.answer)
+        if (!lock.supportIds.length) err(`"${ownerId}" fear needs supporting memories`)
+        for (const id of lock.supportIds) if (clueText(id) === undefined) err(`"${ownerId}" support "${id}" does not exist`)
+        return
+      case 'step':
+        if (lock.stepId !== DOOR_ID && !objects.has(lock.stepId)) err(`"${ownerId}" waits for unknown step "${lock.stepId}"`)
+        return
+    }
   }
   for (const obj of bp.objects) if (obj.lock) checkLock(obj.id, obj.lock)
   checkLock(DOOR_ID, bp.door.lock)
@@ -373,27 +503,64 @@ export function validateBlueprint(bp: RoomBlueprint): ValidationResult {
     }
   }
 
-  // --- solution order: simulate opening each step in turn ---
+  // --- solution order: simulate the dream act by act ---
   const order = bp.solutionOrder
   if (order.length < L.minSteps || order.length > L.maxSteps) err(`solutionOrder must have ${L.minSteps}-${L.maxSteps} steps`)
   if (order[order.length - 1] !== DOOR_ID) err('solutionOrder must end with the door')
   if (new Set(order).size !== order.length) err('solutionOrder repeats a step')
 
+  const stepActs = order.map((id) => (id === DOOR_ID ? 0 : objectAct(objects.get(id))))
+  for (let i = 1; i < stepActs.length; i++) {
+    const act = stepActs[i] ?? 0
+    if (act && act < (stepActs[i - 1] ?? 0)) err(`solutionOrder goes back to act ${act} at "${order[i]}"`)
+  }
+  const maxAct = Math.max(1, ...bp.objects.map(objectAct))
+  for (let act = 1; act <= maxAct; act++) {
+    if (!stepActs.includes(act)) err(`act ${act} has objects but no solution steps, so the dream cannot move past it`)
+  }
+
   const inventory = new Set<string>()
-  const available = (clueId: string) => objects.has(clueId) || clueId === DOOR_ID || inventory.has(clueId)
+  const opened = new Set<string>()
+  let currentAct = 1
+  const visible = (obj: BlueprintObject | undefined) => obj !== undefined && objectAct(obj) <= currentAct
+  const available = (clueId: string) => clueId === DOOR_ID || visible(objects.get(clueId)) || inventory.has(clueId)
+  const needClues = (stepId: string, clueIds: string[]) => {
+    for (const clueId of clueIds) if (!available(clueId)) err(`step "${stepId}" needs clue "${clueId}" before it is found`)
+  }
   for (const stepId of order) {
-    const lock = stepId === DOOR_ID ? bp.door.lock : objects.get(stepId)?.lock
-    if (stepId !== DOOR_ID && !objects.has(stepId)) {
+    const obj = objects.get(stepId)
+    if (stepId !== DOOR_ID && !obj) {
       err(`solutionOrder step "${stepId}" is not an object`)
       continue
     }
-    if (lock?.type === 'key' && !inventory.has(lock.keyId)) err(`step "${stepId}" needs key "${lock.keyId}" before it is found`)
-    if (lock?.type === 'code') {
-      for (const clueId of lock.clueIds) {
-        if (!available(clueId)) err(`step "${stepId}" needs clue "${clueId}" before it is found`)
-      }
+    if (obj && !visible(obj)) err(`step "${stepId}" is in act ${objectAct(obj)} but the dream is still in act ${currentAct}`)
+    const lock = stepId === DOOR_ID ? bp.door.lock : obj?.lock
+    switch (lock?.type) {
+      case 'item':
+        if (!inventory.has(lock.itemId)) err(`step "${stepId}" needs "${lock.itemId}" before it is found`)
+        break
+      case 'code':
+      case 'word':
+      case 'choice':
+        needClues(stepId, lock.clueIds)
+        break
+      case 'melody':
+        needClues(stepId, [lock.sourceId])
+        break
+      case 'identity':
+        for (const q of lock.questions) needClues(stepId, q.clueIds)
+        break
+      case 'fear':
+        needClues(stepId, lock.supportIds)
+        break
+      case 'step':
+        if (!opened.has(lock.stepId)) err(`step "${stepId}" waits for "${lock.stepId}", which is not done yet`)
+        break
+      default:
+        break
     }
-    const found = objects.get(stepId)?.contains
+    opened.add(stepId)
+    const found = obj?.contains
     if (found) {
       inventory.add(found)
       const item = items.get(found)
@@ -401,6 +568,8 @@ export function validateBlueprint(bp: RoomBlueprint): ValidationResult {
         err(`cipher page "${found}" shift clue "${item.shiftClueId}" is not available when the page is found`)
       }
     }
+    // The dream shifts once every step of the current act is done.
+    while (currentAct < maxAct && order.every((id, i) => stepActs[i] !== currentAct || opened.has(id))) currentAct++
   }
 
   // --- hints: one ladder per step, escalating to naming the target ---
@@ -424,4 +593,22 @@ export function validateBlueprint(bp: RoomBlueprint): ValidationResult {
   }
 
   return errors.length === 0 ? { ok: true } : { ok: false, errors }
+}
+
+/** The act an object appears in (1 when unset). */
+export function objectAct(obj: BlueprintObject | undefined): number {
+  return obj?.act ?? 1
+}
+
+function isMelody(notes: string): boolean {
+  return new RegExp(`^[${NOTES.join('')}]{3,6}$`).test(notes)
+}
+
+/** Case-insensitive "does this text mention that answer". */
+export function mentions(text: string, answer: string): boolean {
+  return answer.trim().length > 0 && text.toLowerCase().includes(answer.trim().toLowerCase())
+}
+
+function same(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase()
 }

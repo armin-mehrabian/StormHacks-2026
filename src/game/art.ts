@@ -316,6 +316,38 @@ const FURNITURE: Record<RoomObjectData['kind'], (ctx: Ctx, w: number, h: number)
     rect(ctx, 7, 5, 2, 3, C.goldHi) // tiny dancer
     rect(ctx, 14, 10, 2, 1, C.metalHi) // crank
   },
+  mirror(ctx) {
+    rect(ctx, 3, 0, 10, 15, C.gold) // ornate frame
+    rect(ctx, 3, 0, 10, 1, C.goldHi)
+    rect(ctx, 4, 1, 8, 13, '#9fb6d6') // glass
+    rect(ctx, 4, 1, 8, 4, '#c6d6ee')
+    rect(ctx, 5, 6, 2, 6, '#dfe9f8') // shine streak
+    rect(ctx, 7, 3, 1, 2, '#ffffff')
+    rect(ctx, 7, 15, 2, 1, C.gold)
+  },
+  toy_piano(ctx, w, h) {
+    rect(ctx, 0, 2, w, h - 3, C.red) // body
+    rect(ctx, 0, 2, w, 1, C.redHi)
+    rect(ctx, 2, 6, w - 4, 7, C.paper) // white keys
+    for (let x = 2 + 5; x < w - 2; x += 5) rect(ctx, x, 6, 1, 7, C.creamShade)
+    for (let x = 5; x < w - 4; x += 5) rect(ctx, x, 6, 2, 4, C.ink) // black keys
+    rect(ctx, 1, h - 2, 2, 2, C.redDark)
+    rect(ctx, w - 3, h - 2, 2, 2, C.redDark)
+  },
+  fear(ctx, w, h) {
+    // A small stage under a harsh spotlight, with a lone violin waiting.
+    rect(ctx, 0, h - 9, w, 9, C.woodDark)
+    for (let x = 0; x < w; x += 6) rect(ctx, x, h - 9, 1, 9, C.wood)
+    rect(ctx, 0, h - 9, w, 1, C.woodHi)
+    for (let i = 0; i < h - 9; i++) {
+      const half = 3 + Math.floor((i * (w / 2 - 4)) / (h - 9))
+      rect(ctx, w / 2 - half, i, half * 2, 1, 'rgba(255, 244, 200, 0.35)') // spotlight cone
+    }
+    rect(ctx, w / 2 - 6, h - 12, 12, 3, 'rgba(255, 244, 200, 0.6)') // pool of light
+    rect(ctx, w / 2 - 2, h - 15, 4, 6, C.woodLight) // violin
+    rect(ctx, w / 2 - 1, h - 19, 2, 4, C.wood)
+    rect(ctx, w / 2 - 1, h - 13, 2, 1, C.ink)
+  },
   door(ctx, w, h) {
     rect(ctx, 0, 0, w, h, C.woodDark) // frame
     rect(ctx, 2, 1, w - 4, h - 1, C.wood)

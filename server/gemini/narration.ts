@@ -79,6 +79,31 @@ const EVENT_GUIDANCE: Record<GameEvent['type'], { task: string; length: Length; 
     length: 'short',
     emotion: 'neutral',
   },
+  act_changed: {
+    task: 'The dream just shifted: the room changed and new things appeared (detail says how). A startled, curious thought.',
+    length: 'short',
+    emotion: 'neutral',
+  },
+  clues_connected: {
+    task: 'Two or three clues suddenly click together. An excited "wait..." realisation in my own words, based only on the hint field. Do not state a full code.',
+    length: 'medium',
+    emotion: 'hint',
+  },
+  wrong_answer: {
+    task: 'I got it wrong and the whole dream shuddered; time slipped away. A quick panicky thought.',
+    length: 'short',
+    emotion: 'warning',
+  },
+  identity_solved: {
+    task: 'I just remembered who I am in the mirror, but I am not ready to say it out loud yet. Shaky, emotional, a little brave. Do not say my name.',
+    length: 'medium',
+    emotion: 'praise',
+  },
+  fear_faced: {
+    task: 'I faced my biggest fear and chose to be brave (detail says what I told myself). Relief, a breath, quiet courage.',
+    length: 'medium',
+    emotion: 'praise',
+  },
   escaped: {
     task: "I'm waking up, and it all comes back: say my name and what I was worried about (from dreamerSecret), then something hopeful about it. Relieved, a little amazed.",
     length: 'long', emotion: 'praise',

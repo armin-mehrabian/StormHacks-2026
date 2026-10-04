@@ -17,6 +17,8 @@ import { EndScreen } from './ui/EndScreen.ts'
 import { Hud } from './ui/Hud.ts'
 import { playIntro } from './ui/Intro.ts'
 import { Notice } from './ui/Notice.ts'
+import { Notebook } from './ui/Notebook.ts'
+import { ChoicePuzzle, IdentityBoard, PianoPuzzle } from './ui/StoryPuzzles.ts'
 import { PageOverlay } from './ui/PageOverlay.ts'
 import { showStartScreen } from './ui/StartScreen.ts'
 import { Subtitle } from './ui/Subtitle.ts'
@@ -39,19 +41,32 @@ const narrator = new NarratorManager(gameEvents, audio, subtitle)
 const stopNarrator = narrator.start()
 
 const pages = new PageOverlay()
+const notebook = new Notebook()
 const ui = {
-  hud: new Hud((page) => {
-    sound.play('page-unfold')
-    pages.show(page)
-  }),
+  hud: new Hud(
+    (page) => {
+      sound.play('page-unfold')
+      pages.show(page)
+    },
+    () => notebook.toggle(),
+  ),
   pages,
   codeLock: new CodeLock(() => sound.play('keypad-beep', { volume: 0.7, rate: 0.95 + Math.random() * 0.1 })),
   endScreen: new EndScreen(),
   notice: new Notice(),
+  choice: new ChoicePuzzle(),
+  identity: new IdentityBoard(),
+  piano: new PianoPuzzle((note) => sound.playNote(note)),
+  notebook,
 }
 
 // M mutes everything: narrator voice (and its credit-using requests) plus all sound.
 function onKeyDown(event: KeyboardEvent): void {
+  // N opens the notebook (it closes itself), unless another screen is up.
+  if ((event.key === 'n' || event.key === 'N') && game && !notebook.isOpen && !document.querySelector('.overlay:not([hidden])')) {
+    notebook.open()
+    return
+  }
   if (event.key !== 'm' && event.key !== 'M') return
   const muted = !audio.isMuted()
   audio.setMuted(muted)
@@ -124,5 +139,9 @@ import.meta.hot?.dispose(() => {
   ui.codeLock.destroy()
   ui.endScreen.destroy()
   ui.notice.destroy()
+  ui.choice.destroy()
+  ui.identity.destroy()
+  ui.piano.destroy()
+  ui.notebook.destroy()
   game?.destroy(true)
 })

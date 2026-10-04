@@ -1,9 +1,11 @@
 import Phaser from 'phaser'
-import { ROOM_COLS, ROOM_ROWS, memoryEffect } from '../../shared/blueprint.ts'
+import { DOOR_ID, ROOM_COLS, ROOM_ROWS, memoryEffect, pageDisplayText } from '../../shared/blueprint.ts'
 import type { BlueprintItem, Memory } from '../../shared/blueprint.ts'
 import type { GameEvent, RunStats } from '../../shared/contract.ts'
 import type { SoundEngine } from '../../audio/SoundEngine.ts'
 import type { CodeLock } from '../../ui/CodeLock.ts'
+import type { Notebook } from '../../ui/Notebook.ts'
+import type { ChoicePuzzle, IdentityBoard, PianoPuzzle } from '../../ui/StoryPuzzles.ts'
 import type { EndScreen } from '../../ui/EndScreen.ts'
 import type { Hud } from '../../ui/Hud.ts'
 import { modalBlocksInput } from '../../ui/modal.ts'
@@ -32,7 +34,7 @@ import type { LightSource } from '../lighting.ts'
 import { layoutRoom } from '../rooms/layout.ts'
 import type { RoomData, RoomObjectData } from '../rooms/types'
 import { TIME_LIMIT_MS } from '../state.ts'
-import type { GameState } from '../state.ts'
+import type { Answer, AnswerLock, AnswerResult, GameState } from '../state.ts'
 import { RoomAudio } from '../roomAudio.ts'
 import { PlayerWatcher } from '../watcher.ts'
 import type { WatcherEvent } from '../watcher.ts'
@@ -65,6 +67,10 @@ const DEPTH = {
   SPARKS: 5102,
 } as const
 
+/** How dark the unlit room is in each act: the dream opens up as it is understood. */
+const ACT_DARKNESS: Record<number, number> = { 1: 0.92, 2: 0.84, 3: 0.88 }
+const FADE_IN_MS = 1400
+
 const WALL_TOP_COLOR = 0x17121f
 const WALL_EDGE_COLOR = 0x2b2238
 
@@ -74,6 +80,10 @@ export interface BedroomUi {
   codeLock: CodeLock
   endScreen: EndScreen
   notice: Notice
+  choice: ChoicePuzzle
+  identity: IdentityBoard
+  piano: PianoPuzzle
+  notebook: Notebook
 }
 
 export interface BedroomSceneData {
@@ -125,6 +135,8 @@ export class BedroomScene extends Phaser.Scene {
   private playerLight!: LightSource
   private highlight!: Phaser.GameObjects.Graphics
   private keycap!: Phaser.GameObjects.Image
+  /** Sprites (image, shadow) per object, so later-act objects can fade in. */
+  private readonly objectViews = new Map<string, { image: Phaser.GameObjects.Image; shadow?: Phaser.GameObjects.Rectangle }>()
 
   constructor() {
     super(BedroomScene.KEY)
@@ -256,23 +268,52 @@ export class BedroomScene extends Phaser.Scene {
   }
 
   private createObjects(solids: Phaser.Physics.Arcade.StaticGroup): void {
-    const shadows = this.add.graphics().setDepth(DEPTH.SHADOW)
-    shadows.fillStyle(0x000000, 0.35)
-
     for (const object of this.room.objects) {
       const image = this.add.image(object.x, object.y, furnitureKey(object.kind)).setOrigin(0)
       image.setDisplaySize(object.width, object.height)
-      if (object.kind === 'rug') {
+      let shadow: Phaser.GameObjects.Rectangle | undefined
+      if (object.kind === 'rug' || object.kind === 'fear') {
         image.setDepth(DEPTH.RUG)
       } else if (object.kind === 'door' || object.hangs) {
         image.setDepth(DEPTH.WALLS + 0.6)
       } else {
         image.setDepth(DEPTH.WORLD + object.y + object.height)
-        shadows.fillRect(object.x + 2, object.y + object.height - 3, object.width - 2, 6)
+        shadow = this.add
+          .rectangle(object.x + 2, object.y + object.height - 3, object.width - 2, 6, 0x000000, 0.35)
+          .setOrigin(0)
+          .setDepth(DEPTH.SHADOW)
       }
       if (object.solid) solids.add(image)
-      if (object.interactable) this.interactables.push(object)
+      this.objectViews.set(object.id, { image, shadow })
+      if (this.state.isVisible(object.id)) {
+        if (object.interactable) this.interactables.push(object)
+      } else {
+        // Later acts: invisible and intangible until the dream shifts.
+        image.setAlpha(0)
+        shadow?.setAlpha(0)
+        if (image.body) (image.body as Phaser.Physics.Arcade.StaticBody).enable = false
+      }
     }
+  }
+
+  /** The dream shifts: the room brightens, the next act's objects fade in. */
+  private shiftAct(act: number): void {
+    this.soundEngine.play('act-shift', { volume: 0.9 })
+    this.cameras.main.flash(600, 180, 150, 255)
+    this.lighting.setDarkness(ACT_DARKNESS[act] ?? 0.88)
+    this.audio.setAct(act)
+    const appeared: string[] = []
+    for (const object of this.room.objects) {
+      const view = this.objectViews.get(object.id)
+      if (!view || !this.state.isVisible(object.id) || this.interactables.includes(object)) continue
+      this.tweens.add({ targets: [view.image, view.shadow].filter(Boolean), alpha: 1, duration: FADE_IN_MS })
+      if (view.image.body) (view.image.body as Phaser.Physics.Arcade.StaticBody).enable = true
+      if (object.interactable) this.interactables.push(object)
+      this.addObjectLight(object)
+      appeared.push(object.label)
+    }
+    this.ui.notice.show(act === 3 ? 'Something is waiting for me...' : 'The dream shifts...', 3000)
+    this.emit({ type: 'act_changed', detail: `act ${act}; appeared: ${appeared.join(', ')}`.slice(0, 300) })
   }
 
   private createPlayer(solids: Phaser.Physics.Arcade.StaticGroup): void {
@@ -297,14 +338,22 @@ export class BedroomScene extends Phaser.Scene {
         this.lighting.add({ x: light.x, y: light.y, radius: 52, tint: 0xffa040, glowAlpha: 0.3, flicker: 0.14 })
       }
     }
-    for (const object of this.room.objects) {
-      const cx = object.x + object.width / 2
-      if (object.kind === 'lamp') {
-        this.lighting.add({ x: cx, y: object.y + 8, radius: 150, tint: 0xffd27a, glowAlpha: 0.32, flicker: 0.06 })
-      } else if (object.kind === 'door') {
-        // Light leaking under the door hints at the way out.
-        this.lighting.add({ x: cx, y: object.y + object.height + 2, radius: 34, tint: 0xfff0c0, glowAlpha: 0.3, flicker: 0.12 })
-      }
+    this.lighting.setDarkness(ACT_DARKNESS[this.state.act] ?? 0.9)
+    for (const object of this.room.objects) if (this.state.isVisible(object.id)) this.addObjectLight(object)
+  }
+
+  private addObjectLight(object: RoomObjectData): void {
+    const cx = object.x + object.width / 2
+    if (object.kind === 'lamp') {
+      this.lighting.add({ x: cx, y: object.y + 8, radius: 150, tint: 0xffd27a, glowAlpha: 0.32, flicker: 0.06 })
+    } else if (object.kind === 'door') {
+      // Light leaking under the door hints at the way out.
+      this.lighting.add({ x: cx, y: object.y + object.height + 2, radius: 34, tint: 0xfff0c0, glowAlpha: 0.3, flicker: 0.12 })
+    } else if (object.kind === 'fear') {
+      // The fear burns in a harsh, uneasy spotlight.
+      this.lighting.add({ x: cx, y: object.y + object.height / 2, radius: 110, tint: 0xff6b8a, glowAlpha: 0.35, flicker: 0.1 })
+    } else if (object.kind === 'mirror') {
+      this.lighting.add({ x: cx, y: object.y + 16, radius: 40, tint: 0xb9d4ff, glowAlpha: 0.25, flicker: 0.04 })
     }
   }
 
@@ -440,61 +489,95 @@ export class BedroomScene extends Phaser.Scene {
 
     const description = this.state.description(object.id)
     const result = this.state.inspect(object.id)
-    const memory = this.state.object(object.id)?.memory
-    if (memory && (result.type === 'opened' || result.type === 'empty')) {
-      this.ui.notice.show(description)
-      this.playMemory(object, memory)
-      return
-    }
-    if (result.type === 'needs_key') this.audio.locked()
+    this.noteClue(object.id, object.label, description)
+    const blueprintObject = this.state.object(object.id)
+    const memory = blueprintObject?.memory
+
+    if (result.type === 'needs_item' || result.type === 'waiting') this.audio.locked()
     else if (result.type !== 'escaped') this.audio.search(object.kind)
-    if ((result.type === 'opened' || result.type === 'escaped') && result.usedKey) this.audio.keyUsed()
+    if ((result.type === 'opened' || result.type === 'escaped') && result.usedItem) this.audio.keyUsed()
+
     switch (result.type) {
-      case 'opened': {
-        const keyNote = result.usedKey ? `The ${result.usedKey.name.toLowerCase()} fits. ` : ''
-        if (result.item) {
-          this.ui.notice.show(`${keyNote}You found: ${result.item.name}`)
+      case 'opened':
+      case 'empty': {
+        const usedNote = result.type === 'opened' && result.usedItem ? `I used the ${result.usedItem.name}. ` : ''
+        if (memory) {
+          this.ui.notice.show(`${usedNote}${description}`)
+          if (blueprintObject?.melody) this.soundEngine.playMelody(blueprintObject.melody)
+          this.playMemory(object, memory)
+        } else if (result.type === 'opened' && result.item) {
+          this.ui.notice.show(`${usedNote}I found: ${result.item.name}`)
           this.collect(object, result.item)
         } else {
-          this.ui.notice.show(`${keyNote}${description}`)
-          if (result.usedKey) {
+          this.ui.notice.show(`${usedNote}${description}`)
+          if (result.type === 'opened' && result.usedItem) {
             this.watcher.noteProgress()
             this.celebrate(object)
             this.emit({ type: 'unlocked', objectId: object.id, objectName: object.label })
-          } else if (!this.state.isClue(object.id) && !repeated) {
-            // Clue objects stay quiet so the player can read; empty decoys get roasted.
+          } else if (result.type === 'opened' && !this.state.isClue(object.id) && !repeated) {
+            // Clue objects stay quiet so the player can read; empty decoys get teased.
             this.emit({ type: 'nothing_found', objectId: object.id, objectName: object.label })
           }
         }
+        if (result.type === 'opened' && result.actChanged) this.shiftAct(result.actChanged)
         break
       }
-      case 'empty':
-        this.ui.notice.show(description)
-        break
-      case 'needs_key':
-        this.ui.notice.show(`${description} It's locked.`)
+      case 'needs_item':
+        this.ui.notice.show(`${description} It needs something.`)
         this.cameras.main.shake(120, 0.003)
         if (!repeated) this.emit({ type: 'locked', objectId: object.id, objectName: object.label })
         break
-      case 'needs_code':
+      case 'waiting':
         this.ui.notice.show(description)
-        this.ui.codeLock.show(object.label, result.digits, (code) => this.submitCode(object, code))
+        break
+      case 'needs_answer':
+        this.ui.notice.show(description)
+        this.openPuzzle(object, result.lock)
         break
       case 'escaped':
         this.endGame()
         break
     }
+    this.checkConnections()
   }
 
-  /** Returns true when the code opened the lock. */
-  private submitCode(object: RoomObjectData, code: string): boolean {
-    const result = this.state.enterCode(object.id, code)
+  /** Opens the right puzzle screen for a story lock. */
+  private openPuzzle(object: RoomObjectData, lock: AnswerLock): void {
+    const submit = (answer: Answer) => this.submitAnswer(object, lock, answer)
+    switch (lock.type) {
+      case 'code':
+        this.ui.codeLock.show(object.label, lock.code.length, submit)
+        break
+      case 'word':
+        this.ui.codeLock.show(object.label, lock.word.length, submit, true)
+        break
+      case 'choice':
+        this.ui.choice.show(object.label, lock.question, lock.options, submit)
+        break
+      case 'fear':
+        this.soundEngine.play('search-fear', { volume: 0.8 })
+        this.ui.choice.show(object.label, lock.prompt, lock.options, submit, true)
+        break
+      case 'identity':
+        this.ui.identity.show(lock.questions, submit)
+        break
+      case 'melody':
+        this.ui.piano.show(lock.notes.length, submit)
+        break
+    }
+  }
+
+  /** Returns true when the answer opened the lock. */
+  private submitAnswer(object: RoomObjectData, lock: AnswerLock, answer: Answer): boolean {
+    const result: AnswerResult = this.state.answer(object.id, answer)
     if (result.type === 'wrong') {
       this.wrongCodes++
       this.audio.codeWrong()
-      this.cameras.main.shake(180, 0.006)
-      this.cameras.main.flash(160, 90, 10, 10)
-      this.emit({ type: 'wrong_code', objectId: object.id, objectName: object.label, detail: `entered ${code}` })
+      this.cameras.main.shake(260, 0.008)
+      this.cameras.main.flash(200, 90, 10, 10)
+      if (result.penaltyMs) this.ui.notice.show(`The dream shudders. -${Math.round(result.penaltyMs / 1000)}s`, 2000)
+      const detail = typeof answer === 'string' ? `tried ${answer}` : undefined
+      this.emit({ type: lock.type === 'code' ? 'wrong_code' : 'wrong_answer', objectId: object.id, objectName: object.label, detail })
       return false
     }
     if (result.type === 'escaped') {
@@ -504,21 +587,51 @@ export class BedroomScene extends Phaser.Scene {
     this.audio.codeRight()
     this.watcher.noteProgress()
     this.celebrate(object)
-    if (result.item) {
-      this.ui.notice.show(`The ${object.label.toLowerCase()} clicks open. You found: ${result.item.name}`)
+    if (lock.type === 'identity') {
+      this.ui.notice.show('The reflection sharpens. I know that face.', 3500)
+      for (const q of lock.questions) this.ui.notebook.add(`identity-${q.prompt}`, 'Who I am', `${q.prompt} ${q.answer}`)
+      this.emit({ type: 'identity_solved', objectId: object.id, objectName: object.label })
+    } else if (lock.type === 'fear') {
+      const said = lock.options[lock.answer] ?? ''
+      this.ui.notice.show(`"${said}"`, 4000)
+      this.cameras.main.flash(900, 255, 240, 210)
+      this.emit({ type: 'fear_faced', objectId: object.id, objectName: object.label, detail: `I told myself: ${said}` })
+    } else if (result.item) {
+      this.ui.notice.show(`The ${object.label.toLowerCase()} opens. I found: ${result.item.name}`)
       this.collect(object, result.item)
     } else {
-      this.ui.notice.show(`The ${object.label.toLowerCase()} clicks open. It's empty.`)
+      this.ui.notice.show(`The ${object.label.toLowerCase()} opens.`)
       this.emit({ type: 'unlocked', objectId: object.id, objectName: object.label })
     }
+    if (result.actChanged) this.time.delayedCall(900, () => this.shiftAct(result.actChanged ?? this.state.act))
+    this.checkConnections()
     return true
+  }
+
+  /** Writes a clue into the notebook, if it is one. */
+  private noteClue(id: string, title: string, text: string): void {
+    if (id === DOOR_ID || !this.state.isClue(id)) return
+    if (this.ui.notebook.add(id, title, text)) this.ui.hud.setNotebookCount(this.ui.notebook.count)
+  }
+
+  /** When every clue for a lock is known, the dreamer connects the dots out loud. */
+  private checkConnections(): void {
+    for (const ownerId of this.state.newlyConnected()) {
+      const ladder = this.state.blueprint.hints.find((h) => h.targetId === ownerId)
+      // The middle of the ladder: a nudge that links the clues without giving it all away.
+      const hint = ladder?.lines[Math.max(0, Math.min(1, ladder.lines.length - 2))]
+      this.emit({ type: 'clues_connected', objectId: ownerId, objectName: this.state.displayName(ownerId), hint })
+    }
   }
 
   private collect(object: RoomObjectData, item: BlueprintItem): void {
     this.watcher.noteProgress()
     this.celebrate(object)
     this.ui.hud.setInventory(this.state.inventoryItems())
-    this.audio.found(item.kind)
+    this.audio.found(item.kind === 'page' ? 'page' : 'key')
+    if (item.kind === 'page') {
+      if (this.ui.notebook.add(item.id, item.name, pageDisplayText(item))) this.ui.hud.setNotebookCount(this.ui.notebook.count)
+    }
     if (item.kind !== 'page') {
       this.emit({ type: 'item_found', objectId: object.id, objectName: object.label, itemName: item.name })
       return
@@ -538,6 +651,9 @@ export class BedroomScene extends Phaser.Scene {
     const source = effect === 'phone' ? 'Voicemail' : effect === 'radio' ? 'Radio' : 'Memory'
     this.ui.pages.showTranscript(`${source} · ${memory.speakerName}`, memory.text)
     this.voice.playMemory(object.id, memory)
+    if (this.ui.notebook.add(`${object.id}-memory`, `${source} · ${memory.speakerName}`, memory.text)) {
+      this.ui.hud.setNotebookCount(this.ui.notebook.count)
+    }
     if (this.heardMemories.has(object.id)) return
     this.heardMemories.add(object.id)
     this.watcher.noteProgress()

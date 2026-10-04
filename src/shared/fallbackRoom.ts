@@ -1,6 +1,9 @@
 // Handmade dream used for demo mode (?demo) and whenever Gemini is unavailable, slow, or
-// produces an invalid blueprint. It exercises every puzzle block: a diary page, a cipher,
-// three memories that hide the code, a locked case, and a red-herring drawer.
+// produces an invalid blueprint. A three-act showcase of every story mechanic:
+//   Act 1: a diary points to a hidden cassette; Mom's voicemail plays once it's inserted.
+//   Act 2: the room shifts. Grandma's song (music box -> toy piano), the night radio,
+//          a code hidden in three voices, and the mirror asking "who am I?".
+//   Act 3: the fear appears, an empty stage. Choose what to tell yourself, then wake up.
 
 import type { RoomBlueprint } from './blueprint.ts'
 
@@ -16,13 +19,7 @@ export const FALLBACK_ROOM: RoomBlueprint = {
   title: 'The Night Before',
   introLine: 'A small bedroom, full of music. Someone here has not slept in a long time.',
   objects: [
-    {
-      id: 'painting',
-      kind: 'painting',
-      slot: 'T1',
-      name: 'Painting',
-      description: 'A concert hall. Hundreds of empty seats, all waiting for me. No pressure.',
-    },
+    // ---- Act 1: confusion ----
     {
       id: 'bookshelf',
       kind: 'bookshelf',
@@ -43,26 +40,15 @@ export const FALLBACK_ROOM: RoomBlueprint = {
       kind: 'clock',
       slot: 'T4',
       name: 'Clock',
-      description: "The clock stopped at 3 o'clock. Someone circled the 3. Was that... me?",
+      description: 'Stuck at 2:47. Of course it is. Time does not want to help either.',
     },
     {
-      id: 'plant',
-      kind: 'plant',
+      id: 'lamp',
+      kind: 'lamp',
       slot: 'L1',
-      name: 'Cactus',
-      description: 'A tiny cactus. It is handling stress better than I am.',
-    },
-    {
-      id: 'music_box',
-      kind: 'music_box',
-      slot: 'L2',
-      name: 'Music box',
-      description: "Grandma's music box. It still plays.",
-      memory: {
-        speaker: 'grandma',
-        speakerName: 'Grandma',
-        text: "Remember, my darling: you only need the first 2 notes. Play those, and the rest of the song will find you.",
-      },
+      name: 'Lamp',
+      description: 'My desk lamp. Warm. Something rattles inside the shade.',
+      contains: 'cassette',
     },
     {
       id: 'bed',
@@ -72,15 +58,66 @@ export const FALLBACK_ROOM: RoomBlueprint = {
       description: 'My bed. I should be asleep in it. Ha. Funny.',
     },
     {
+      id: 'answering_machine',
+      kind: 'answering_machine',
+      slot: 'F3',
+      name: 'Answering machine',
+      description: 'The answering machine. The tape slot is empty.',
+      lock: { type: 'item', itemId: 'cassette' },
+      memory: {
+        speaker: 'mom',
+        speakerName: 'Mom',
+        text: "Hi Maya, sweetie, it's Mom! Big day tomorrow. Don't forget your lucky number, 4. And Grandma's old music box is still in your room... she'd want you to hear it. Love you!",
+      },
+    },
+
+    // ---- Act 2: memories ----
+    {
+      id: 'mirror',
+      kind: 'mirror',
+      slot: 'T1',
+      name: 'Mirror',
+      act: 2,
+      description: "A mirror. The reflection is blurry, like it doesn't know who I am yet.",
+      lock: {
+        type: 'identity',
+        questions: [
+          { prompt: 'My name is...', answer: 'Maya', decoys: ['Mia', 'Grace'], clueIds: ['answering_machine'] },
+          {
+            prompt: 'Tomorrow I have my...',
+            answer: 'violin audition',
+            decoys: ['piano recital', 'math exam'],
+            clueIds: ['page-diary'],
+          },
+          { prompt: 'The person I miss most is...', answer: 'Grandma', decoys: ['Mom', 'my old teacher'], clueIds: ['music_box'] },
+        ],
+      },
+    },
+    {
+      id: 'music_box',
+      kind: 'music_box',
+      slot: 'L2',
+      name: 'Music box',
+      act: 2,
+      description: "Grandma's music box. It plays our song.",
+      melody: 'EDCDEE',
+      memory: {
+        speaker: 'grandma',
+        speakerName: 'Grandma',
+        text: 'Remember our song, darling. Play the first 2 notes, and the music remembers the rest for you. It always has.',
+      },
+    },
+    {
       id: 'radio',
       kind: 'radio',
       slot: 'R2',
       name: 'Radio',
+      act: 2,
       description: 'My old radio. It always finds the late-night station.',
       memory: {
         speaker: 'radio_host',
         speakerName: 'Night radio',
-        text: "You're listening to Night Owl Radio. If you can't sleep tonight, try this: breathe in slowly, and count to 7. Seven slow breaths. You've got this.",
+        text: "Night Owl Radio, still with you. Can't sleep? Breathe in slowly and count to 7. Seven slow breaths. You've got this.",
       },
     },
     {
@@ -88,36 +125,41 @@ export const FALLBACK_ROOM: RoomBlueprint = {
       kind: 'lockbox',
       slot: 'F1',
       name: 'Violin case',
-      description: 'My violin case, with a three-digit lock. I always forget the code when I am nervous.',
-      contains: 'key',
+      act: 2,
+      description: 'My violin case. A three-digit lock. Three voices, three numbers?',
+      contains: 'ticket',
       lock: { type: 'code', code: '472', clueIds: ['answering_machine', 'radio', 'music_box'] },
     },
     {
-      id: 'lamp',
-      kind: 'lamp',
-      slot: 'F2',
-      name: 'Lamp',
-      description: 'My desk lamp. Something is folded under the shade.',
-      contains: 'page-cipher',
-    },
-    {
-      id: 'answering_machine',
-      kind: 'answering_machine',
-      slot: 'F3',
-      name: 'Answering machine',
-      description: 'The answering machine is blinking. One new message.',
-      memory: {
-        speaker: 'mom',
-        speakerName: 'Mom',
-        text: "Hi sweetie, it's Mom. Just calling to say good luck tomorrow. And don't forget your lucky number, 4, like when you were little. We are so proud of you. Get some sleep!",
-      },
-    },
-    {
-      id: 'trash',
-      kind: 'trash_can',
+      id: 'toy_piano',
+      kind: 'toy_piano',
       slot: 'F4',
-      name: 'Trash can',
-      description: 'Crumpled practice schedules. Every single hour crossed out.',
+      name: 'Toy piano',
+      act: 2,
+      description: "A tiny toy piano with five keys. Grandma's song... how did it go?",
+      contains: 'photo',
+      lock: { type: 'melody', notes: 'EDCDEE', sourceId: 'music_box' },
+    },
+
+    // ---- Act 3: the fear ----
+    {
+      id: 'fear',
+      kind: 'fear',
+      slot: 'F2',
+      name: 'The empty stage',
+      act: 3,
+      description: 'A spotlight on an empty stage. My violin waits in the light. My hands will not stop shaking.',
+      lock: {
+        type: 'fear',
+        prompt: 'The spotlight is blinding. Everyone is watching. What do I tell myself?',
+        options: [
+          'Everyone is waiting for me to mess up.',
+          'Just play the first two notes. The music remembers.',
+          'Maybe I should just stay asleep forever.',
+        ],
+        answer: 1,
+        supportIds: ['music_box', 'toy_piano'],
+      },
     },
   ],
   items: [
@@ -125,55 +167,59 @@ export const FALLBACK_ROOM: RoomBlueprint = {
       id: 'page-diary',
       kind: 'page',
       name: 'Diary page',
-      text: "I can't sleep. Every time I close my eyes I see the stage. Grandma always said the music remembers for you. I just have to listen.",
+      text: "Dear me, I can't sleep. My violin audition is at 9. Mom left a message, but I hid the tape somewhere warm so I would stop replaying it.",
+    },
+    { id: 'cassette', kind: 'tool', name: 'Cassette: MOM' },
+    {
+      id: 'photo',
+      kind: 'page',
+      name: 'Old photo',
+      text: "Me and Grandma at my first recital, both grinning. On the back, in her handwriting: 'You were brave then too.'",
     },
     {
-      id: 'page-cipher',
+      id: 'ticket',
       kind: 'page',
-      name: 'Scrambled note',
-      text: 'THE CODE IS IN THE VOICES',
-      cipherShift: 3,
-      shiftClueId: 'clock',
+      name: 'Audition slip',
+      text: 'AUDITION: 9:00 AM, Main Hall. Bring: violin, nerves, and Grandma\'s song.',
     },
-    { id: 'key', kind: 'key', name: 'Brass key' },
   ],
   door: {
-    description: 'My bedroom door. Locked. From the inside? That makes no sense. Unless this is a dream.',
-    lock: { type: 'key', keyId: 'key' },
+    description: 'My bedroom door. It will not open. Not until I stop running from tomorrow.',
+    lock: { type: 'step', stepId: 'fear' },
   },
-  solutionOrder: ['bookshelf', 'lamp', 'answering_machine', 'radio', 'music_box', 'case', 'door'],
+  solutionOrder: ['bookshelf', 'lamp', 'answering_machine', 'music_box', 'toy_piano', 'radio', 'case', 'mirror', 'fear', 'door'],
   hints: [
-    {
-      targetId: 'bookshelf',
-      lines: ['Something is sticking out of all that sheet music.', 'Check the bookshelf.'],
-    },
+    { targetId: 'bookshelf', lines: ['So much sheet music... one page is sticking out.', 'Check the bookshelf.'] },
     {
       targetId: 'lamp',
-      lines: ['My desk always had secrets.', 'Something is folded under the lamp shade.', 'Look under the lamp.'],
+      lines: ['Somewhere warm... what is warm in here?', 'The lamp shade rattles.', 'Look inside the lamp.'],
     },
     {
       targetId: 'answering_machine',
-      lines: ['The note said the code is in the voices. Who would call me tonight?', 'Play the answering machine.'],
+      lines: ['A tape labelled Mom. It has to play somewhere.', 'Put the cassette in the answering machine.'],
     },
+    { targetId: 'music_box', lines: ["Mom said Grandma's music box is still here.", 'Open the music box.'] },
     {
-      targetId: 'radio',
-      lines: ['Mom gave me one number. Who else talks to me at night?', 'Turn on the radio.'],
+      targetId: 'toy_piano',
+      lines: ['That melody... I could play it back.', 'E, D, C, D, E, E.', "Play Grandma's song on the toy piano."],
     },
-    {
-      targetId: 'music_box',
-      lines: ['Two voices down. Grandma always had the last word.', 'Open the music box.'],
-    },
+    { targetId: 'radio', lines: ['Who else talks to me this late at night?', 'Turn on the radio.'] },
     {
       targetId: 'case',
       lines: [
-        'Mom, the radio, Grandma. Three voices, three numbers.',
+        'Three voices, three numbers.',
         'Lucky 4, seven breaths, the first 2 notes.',
         'The violin case code is 4, 7, 2.',
       ],
     },
     {
-      targetId: 'door',
-      lines: ['I have a key now. Doors like keys.', 'Use the brass key on the door.'],
+      targetId: 'mirror',
+      lines: ['I need to remember who I am.', 'My name, tomorrow, the person I miss.', 'Look in the mirror.'],
     },
+    {
+      targetId: 'fear',
+      lines: ['The stage is waiting. What would Grandma tell me?', 'The music remembers.', 'Face the empty stage.'],
+    },
+    { targetId: 'door', lines: ['The way out is open now.', 'Open the door.'] },
   ],
 }

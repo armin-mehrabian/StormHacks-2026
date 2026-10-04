@@ -143,6 +143,38 @@ export class SoundEngine {
     }
   }
 
+  /**
+   * A synthesized music-box note (exact pitch, so melody puzzles are fair by ear).
+   * startIn delays the note, in seconds.
+   */
+  playNote(note: string, startIn = 0): void {
+    const frequency = NOTE_FREQUENCIES[note]
+    if (!frequency) return
+    const start = this.ctx.currentTime + startIn
+    const gain = this.ctx.createGain()
+    gain.gain.setValueAtTime(0, start)
+    gain.gain.linearRampToValueAtTime(0.35, start + 0.005)
+    gain.gain.exponentialRampToValueAtTime(0.001, start + 1.4)
+    gain.connect(this.buses.sfx)
+    // A bright fundamental plus a quieter, slightly inharmonic overtone: a tine being plucked.
+    for (const [ratio, level] of [[1, 1], [2.76, 0.25], [5.4, 0.08]] as const) {
+      const osc = this.ctx.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.value = frequency * ratio
+      const partial = this.ctx.createGain()
+      partial.gain.value = level
+      osc.connect(partial).connect(gain)
+      osc.start(start)
+      osc.stop(start + 1.5)
+    }
+  }
+
+  /** Plays a melody of notes, one every `beat` seconds. Returns its length in seconds. */
+  playMelody(notes: string, beat = 0.45): number {
+    ;[...notes].forEach((note, i) => this.playNote(note, i * beat))
+    return notes.length * beat + 1
+  }
+
   setMuted(muted: boolean): void {
     this.muted = muted
     this.master.gain.setTargetAtTime(muted ? 0 : 1, this.ctx.currentTime, 0.05)
@@ -293,4 +325,13 @@ function softClipCurve(amount: number): Float32Array<ArrayBuffer> {
     curve[i] = Math.tanh(amount * x) / Math.tanh(amount)
   }
   return curve
+}
+
+/** Music-box pitches (fifth octave) for the notes in NOTES. */
+const NOTE_FREQUENCIES: Record<string, number> = {
+  C: 523.25,
+  D: 587.33,
+  E: 659.25,
+  G: 783.99,
+  A: 880,
 }

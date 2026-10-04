@@ -36,6 +36,9 @@ const SEARCH_SOUND: Record<RoomObjectData['kind'], SfxKey> = {
   answering_machine: 'search-answering_machine',
   radio: 'search-radio',
   music_box: 'search-music_box',
+  mirror: 'search-mirror',
+  toy_piano: 'search-toy_piano',
+  fear: 'search-fear',
   door: 'locked-rattle',
 }
 
@@ -60,6 +63,8 @@ export class RoomAudio {
   private tenseMusic: LoopHandle | undefined
   private clock: LoopHandle | undefined
   private heartbeat: LoopHandle | undefined
+  /** Act 3 (facing the fear) keeps some tension in the music regardless of the clock. */
+  private actTension = 0
   private stepTimer = 0
   private lastStep = -1
   private untilThunder = randomBetween(THUNDER_MIN_MS / 2, THUNDER_MAX_MS / 2)
@@ -134,11 +139,17 @@ export class RoomAudio {
     const tension = timeRemainingMs <= TENSION_MS ? 1 - timeRemainingMs / TENSION_MS : 0
     this.heartbeat?.setVolume(tension > 0 ? 0.2 + 0.6 * tension : 0, 1)
     this.clock?.setRate(1 + 0.5 * tension)
-    // The soundtrack crossfades from calm to tense as the dream fades.
-    if (tension > 0) {
-      this.calmMusic?.setVolume(MUSIC_LEVEL * (1 - tension), 1)
-      this.tenseMusic?.setVolume(MUSIC_LEVEL * Math.min(1, tension * 1.5), 1)
+    // The soundtrack crossfades from calm to tense as the dream fades (or the fear appears).
+    const musicTension = Math.max(tension, this.actTension)
+    if (musicTension > 0) {
+      this.calmMusic?.setVolume(MUSIC_LEVEL * (1 - musicTension), 1)
+      this.tenseMusic?.setVolume(MUSIC_LEVEL * Math.min(1, musicTension * 1.5), 1)
     }
+  }
+
+  /** The dream moved to a new act. */
+  setAct(act: number): void {
+    this.actTension = act >= 3 ? 0.5 : 0
   }
 
   search(kind: RoomObjectData['kind']): void {

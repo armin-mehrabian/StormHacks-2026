@@ -45,6 +45,11 @@ const FALLBACKS: Record<GameEvent['type'], { emotion: NarratorEmotion; lines: re
     emotion: 'neutral',
     lines: ['That voice... I know that voice.', 'Why does that make my chest hurt?'],
   },
+  act_changed: { emotion: 'neutral', lines: ['Whoa. Was that there before?', 'The room... changed.'] },
+  clues_connected: { emotion: 'hint', lines: ['Wait... those go together, don\'t they?'] },
+  wrong_answer: { emotion: 'warning', lines: ['No no no, wrong!', 'Everything shook... careful.'] },
+  identity_solved: { emotion: 'praise', lines: ['I... I remember. That\'s me.'] },
+  fear_faced: { emotion: 'praise', lines: ['Okay. Okay. I can do this.'] },
   escaped: { emotion: 'praise', lines: ["I remember now... I'm waking up. I'm waking up!"] },
   time_up: { emotion: 'sarcastic', lines: ["So sleepy... I can't... wake up..."] },
 }

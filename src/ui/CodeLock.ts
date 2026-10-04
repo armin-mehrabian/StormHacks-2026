@@ -13,6 +13,7 @@ export class CodeLock {
   private readonly status: HTMLParagraphElement
   private submit: SubmitCode | undefined
   private digits = 0
+  private letters = false
   private readonly onDigit: () => void
 
   /** onDigit fires for each digit typed, e.g. for a dial click sound. */
@@ -38,8 +39,9 @@ export class CodeLock {
     parent.appendChild(this.root)
 
     this.input.addEventListener('input', (event) => {
-      this.input.value = this.input.value.replace(/\D/g, '').slice(0, this.digits)
-      if (/\d/.test((event as InputEvent).data ?? '')) this.onDigit()
+      const allowed = this.letters ? /[^A-Za-z]/g : /\D/g
+      this.input.value = this.input.value.replace(allowed, '').toUpperCase().slice(0, this.digits)
+      if (/[A-Za-z0-9]/.test((event as InputEvent).data ?? '')) this.onDigit()
       this.status.textContent = ''
     })
     this.input.addEventListener('keydown', (event) => {
@@ -55,8 +57,11 @@ export class CodeLock {
     return !this.root.hidden
   }
 
-  show(lockName: string, digits: number, submit: SubmitCode): void {
-    this.heading.textContent = `${lockName}: ${digits}-digit code`
+  /** letters: a word lock (A-Z) instead of digits. */
+  show(lockName: string, digits: number, submit: SubmitCode, letters = false): void {
+    this.letters = letters
+    this.input.inputMode = letters ? 'text' : 'numeric'
+    this.heading.textContent = `${lockName}: ${digits}-${letters ? 'letter word' : 'digit code'}`
     this.digits = digits
     this.input.maxLength = digits
     this.input.placeholder = '_'.repeat(digits)
@@ -87,7 +92,7 @@ export class CodeLock {
       this.close()
       return
     }
-    this.status.textContent = 'Wrong code'
+    this.status.textContent = 'The dream shudders... time slips away.'
     this.input.select()
     this.card.classList.remove('shake')
     // Restart the shake animation on repeated wrong codes.

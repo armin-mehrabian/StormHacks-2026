@@ -5,8 +5,8 @@ import Phaser from 'phaser'
 import { GLOW_KEY } from './art.ts'
 
 const DARKNESS_KEY = 'lighting-darkness'
-/** Initial implementation choices for the mood. */
-const DARKNESS = 'rgba(6, 4, 14, 0.9)'
+/** Initial implementation choice for the mood: how dark the unlit room is (0-1). */
+const DEFAULT_DARKNESS = 0.9
 const GLOW_SIZE = 128
 
 export interface LightSource {
@@ -34,6 +34,8 @@ export class Lighting {
   private readonly depth: number
   /** 0..1 extra darkness, e.g. when time is running out. */
   private dread = 0
+  private darkness = DEFAULT_DARKNESS
+  private targetDarkness = DEFAULT_DARKNESS
 
   constructor(scene: Phaser.Scene, width: number, height: number, depth: number) {
     this.scene = scene
@@ -62,6 +64,11 @@ export class Lighting {
     return light
   }
 
+  /** Eases the unlit room toward a new darkness (0 = fully lit, 1 = black), e.g. per act. */
+  setDarkness(value: number): void {
+    this.targetDarkness = Phaser.Math.Clamp(value, 0, 1)
+  }
+
   setDread(value: number): void {
     this.dread = Phaser.Math.Clamp(value, 0, 1)
   }
@@ -70,7 +77,8 @@ export class Lighting {
     const ctx = this.texture.context
     ctx.globalCompositeOperation = 'source-over'
     ctx.clearRect(0, 0, this.width, this.height)
-    ctx.fillStyle = DARKNESS
+    this.darkness += (this.targetDarkness - this.darkness) * 0.02
+    ctx.fillStyle = `rgba(6, 4, 14, ${this.darkness.toFixed(3)})`
     ctx.fillRect(0, 0, this.width, this.height)
 
     ctx.globalCompositeOperation = 'destination-out'

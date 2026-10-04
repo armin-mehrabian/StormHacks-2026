@@ -39,6 +39,11 @@ export const SFX = {
   'search-radio': { prompt: 'old radio switching on, tuning dial sweeping through static, landing on a station', duration: 1.5 },
   'search-music_box': { prompt: 'wooden music box lid opening, a few delicate tinkling music box notes of a lullaby', duration: 4 },
 
+  'search-mirror': { prompt: 'soft glassy shimmer, a mirror ringing faintly, dreamlike', duration: 1.5 },
+  'search-toy_piano': { prompt: 'a single plinky note on a tiny toy piano', duration: 0.8, influence: 0.7 },
+  'search-fear': { prompt: 'deep low heartbeat thump with a rising tense string swell, ominous', duration: 2.5 },
+  'act-shift': { prompt: 'dreamy magical whoosh swell with shimmering chimes, the world transforming', duration: 3 },
+
   // Pages and locks.
   'page-unfold': { prompt: 'unfolding an old piece of paper, crisp crinkle', duration: 1 },
   'locked-rattle': { prompt: 'doorknob rattling on a locked wooden door', duration: 1.2 },

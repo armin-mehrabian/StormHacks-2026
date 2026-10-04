@@ -34,6 +34,16 @@ export const GAME_EVENT_TYPES = [
   'time_warning',
   /** A memory (voicemail, radio, music box) just finished playing. */
   'memory_heard',
+  /** The dream shifted to a new act; new things appeared. */
+  'act_changed',
+  /** Every clue for a lock is now known: the dreamer connects the dots. */
+  'clues_connected',
+  /** A wrong answer on a story lock; the dream shudders and time is lost. */
+  'wrong_answer',
+  /** The dreamer remembered who they are (the mirror). */
+  'identity_solved',
+  /** The dreamer faced their fear. */
+  'fear_faced',
   'escaped',
   'time_up',
 ] as const

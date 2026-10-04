@@ -662,3 +662,197 @@ body.dream-collapse #game canvas {
   box-shadow: inset 0 -5px 0 #241a38, 0 0 0 3px #000;
   animation: none;
 }
+
+/* ---------------------------------------------------------------- Story puzzles */
+
+.puzzle-card {
+  width: min(90vw, 560px);
+  padding: 26px 28px 18px;
+  color: var(--ink);
+  text-align: center;
+  background: linear-gradient(#1d1830, #120e1f);
+  border: 3px solid var(--panel-edge);
+  box-shadow: inset 0 0 0 2px #00000080, 0 0 0 3px #000, 0 20px 60px #000;
+  animation: page-in 0.3s ease-out;
+}
+
+.puzzle-card.shake {
+  animation: shake 0.35s;
+}
+
+.puzzle-heading {
+  margin: 0 0 14px;
+  font: 13px/1.6 var(--font-pixel);
+  color: var(--gold);
+  text-transform: uppercase;
+}
+
+.puzzle-question {
+  margin: 0 0 16px;
+  font: 28px/1.15 var(--font-body);
+}
+
+.choice-list {
+  display: grid;
+  gap: 10px;
+}
+
+.choice-option,
+.identity-option {
+  padding: 10px 14px;
+  font: 24px/1.1 var(--font-body);
+  color: var(--ink);
+  text-align: left;
+  background: #2a2140;
+  border: 2px solid #4a3b6b;
+  cursor: pointer;
+}
+
+.choice-option:hover,
+.choice-option:focus-visible,
+.identity-option:hover {
+  outline: none;
+  border-color: var(--gold);
+  background: #352a52;
+}
+
+/* Facing the fear: harsher light, a pulsing red edge. */
+.puzzle-card.fear-card {
+  background: radial-gradient(circle at 50% 0%, #4a1e2e, #120a14 70%);
+  border-color: #7a2632;
+  animation: page-in 0.3s ease-out, fear-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes fear-pulse {
+  50% {
+    box-shadow: inset 0 0 0 2px #00000080, 0 0 0 3px #000, 0 0 60px #ff5a5a55;
+  }
+}
+
+.identity-card {
+  width: min(92vw, 640px);
+}
+
+.identity-row {
+  margin-bottom: 14px;
+  text-align: left;
+}
+
+.identity-prompt {
+  display: block;
+  margin-bottom: 6px;
+  font: 24px var(--font-body);
+  color: var(--ink-dim);
+}
+
+.identity-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.identity-option.picked {
+  border-color: var(--hint);
+  color: var(--hint);
+  background: #1c3a3a;
+}
+
+.ui-button:disabled {
+  cursor: not-allowed;
+}
+
+.piano-slots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.piano-slot {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 44px;
+  font: 16px var(--font-pixel);
+  color: var(--gold);
+  background: #0b0a10;
+  border: 2px solid #4a3b6b;
+}
+
+.piano-keys {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+}
+
+.piano-key {
+  width: 64px;
+  height: 140px;
+  padding-top: 96px;
+  font: 14px var(--font-pixel);
+  color: #2b2118;
+  background: linear-gradient(#fffaf0, #e9dcc0);
+  border: 3px solid #1a1420;
+  border-radius: 0 0 6px 6px;
+  box-shadow: inset 0 -8px 0 #c7b694;
+  cursor: pointer;
+}
+
+.piano-key:active {
+  transform: translateY(3px);
+  box-shadow: inset 0 -3px 0 #c7b694;
+}
+
+/* ---------------------------------------------------------------- Notebook */
+
+.notebook-card {
+  width: min(90vw, 620px);
+  max-height: 80vh;
+  overflow: auto;
+  transform: rotate(0.6deg);
+}
+
+.notebook-list {
+  display: grid;
+  gap: 14px;
+  text-align: left;
+}
+
+.notebook-entry-title {
+  font: 10px var(--font-pixel);
+  color: #6b5a44;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.notebook-entry-text {
+  margin: 4px 0 0;
+  font: 20px/1.4 var(--font-paper);
+}
+
+.notebook-entry-text mark {
+  padding: 0 3px;
+  color: #5a1a22;
+  background: #f2d16b99;
+}
+
+.notebook-empty {
+  font: 22px var(--font-paper);
+}
+
+.hud-notebook {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.hud-left {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.hud-notebook.bump {
+  animation: pop-in 0.35s cubic-bezier(0.2, 1.6, 0.4, 1);
+  border-color: var(--gold-dim);
+}
