@@ -13,8 +13,11 @@ export class CodeLock {
   private readonly status: HTMLParagraphElement
   private submit: SubmitCode | undefined
   private digits = 0
+  private readonly onDigit: () => void
 
-  constructor(parent: HTMLElement = document.body) {
+  /** onDigit fires for each digit typed, e.g. for a dial click sound. */
+  constructor(onDigit: () => void = () => {}, parent: HTMLElement = document.body) {
+    this.onDigit = onDigit
     this.root = document.createElement('div')
     this.root.className = 'overlay'
     this.root.hidden = true
@@ -34,8 +37,9 @@ export class CodeLock {
     this.root.append(this.card)
     parent.appendChild(this.root)
 
-    this.input.addEventListener('input', () => {
+    this.input.addEventListener('input', (event) => {
       this.input.value = this.input.value.replace(/\D/g, '').slice(0, this.digits)
+      if (/\d/.test((event as InputEvent).data ?? '')) this.onDigit()
       this.status.textContent = ''
     })
     this.input.addEventListener('keydown', (event) => {

@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { ROOM_COLS, ROOM_ROWS } from '../../shared/blueprint.ts'
 import type { BlueprintItem } from '../../shared/blueprint.ts'
 import type { GameEvent } from '../../shared/contract.ts'
+import type { SoundEngine } from '../../audio/SoundEngine.ts'
 import type { CodeLock } from '../../ui/CodeLock.ts'
 import type { EndScreen } from '../../ui/EndScreen.ts'
 import type { Hud } from '../../ui/Hud.ts'
@@ -31,6 +32,7 @@ import type { LightSource } from '../lighting.ts'
 import { layoutRoom } from '../rooms/layout.ts'
 import type { RoomData, RoomObjectData } from '../rooms/types'
 import type { GameState } from '../state.ts'
+import { RoomAudio } from '../roomAudio.ts'
 import { PlayerWatcher } from '../watcher.ts'
 import type { WatcherEvent } from '../watcher.ts'
 
@@ -76,6 +78,7 @@ export interface BedroomSceneData {
   ui: BedroomUi
   /** Speaks page text aloud. Fire-and-forget. */
   readAloud: (text: string) => void
+  sound: SoundEngine
 }
 
 interface MoveKeys {
@@ -91,6 +94,8 @@ export class BedroomScene extends Phaser.Scene {
   private state!: GameState
   private ui!: BedroomUi
   private readAloud!: (text: string) => void
+  private soundEngine!: SoundEngine
+  private audio!: RoomAudio
   private watcher!: PlayerWatcher
   private room!: RoomData
   private readonly inspections = new InspectionTracker()
@@ -116,6 +121,7 @@ export class BedroomScene extends Phaser.Scene {
     this.state = data.state
     this.ui = data.ui
     this.readAloud = data.readAloud
+    this.soundEngine = data.sound
     this.room = layoutRoom(data.state.blueprint)
     this.interactables = []
     this.watcher = new PlayerWatcher(this.state, (event) => this.emit(event))
@@ -135,6 +141,8 @@ export class BedroomScene extends Phaser.Scene {
     this.createPlayer(solids)
     this.createLighting(decor)
     this.createEffects()
+    this.audio = new RoomAudio(this.soundEngine, room, decor, () => this.lightning())
+    this.audio.start()
     this.createInput()
 
     const camera = this.cameras.main
@@ -159,6 +167,9 @@ export class BedroomScene extends Phaser.Scene {
       return
     }
     this.updateClock()
+
+    const moving = this.body_.velocity.lengthSq() > 1
+    this.audio.update(delta, this.feet.x, this.feet.y, moving, this.state.timeRemainingMs)
 
     // Always consume E so a press that closed an overlay can't re-trigger an inspect.
     const interactPressed = Phaser.Input.Keyboard.JustDown(this.interactKey)
@@ -409,6 +420,9 @@ export class BedroomScene extends Phaser.Scene {
 
     const description = this.state.description(object.id)
     const result = this.state.inspect(object.id)
+    if (result.type === 'needs_key') this.audio.locked()
+    else if (result.type !== 'escaped') this.audio.search(object.kind)
+    if ((result.type === 'opened' || result.type === 'escaped') && result.usedKey) this.audio.keyUsed()
     switch (result.type) {
       case 'opened': {
         const keyNote = result.usedKey ? `The ${result.usedKey.name.toLowerCase()} fits. ` : ''
@@ -450,6 +464,7 @@ export class BedroomScene extends Phaser.Scene {
   private submitCode(object: RoomObjectData, code: string): boolean {
     const result = this.state.enterCode(object.id, code)
     if (result.type === 'wrong') {
+      this.audio.codeWrong()
       this.cameras.main.shake(180, 0.006)
       this.cameras.main.flash(160, 90, 10, 10)
       this.emit({ type: 'wrong_code', objectId: object.id, objectName: object.label, detail: `entered ${code}` })
@@ -459,6 +474,7 @@ export class BedroomScene extends Phaser.Scene {
       this.endGame()
       return true
     }
+    this.audio.codeRight()
     this.watcher.noteProgress()
     this.celebrate(object)
     if (result.item) {
@@ -475,6 +491,7 @@ export class BedroomScene extends Phaser.Scene {
     this.watcher.noteProgress()
     this.celebrate(object)
     this.ui.hud.setInventory(this.state.inventoryItems())
+    this.audio.found(item.kind)
     if (item.kind !== 'page') {
       this.emit({ type: 'item_found', objectId: object.id, objectName: object.label, itemName: item.name })
       return
@@ -514,10 +531,16 @@ export class BedroomScene extends Phaser.Scene {
     this.ui.pages.close()
     this.ui.hud.setTime(this.state.timeRemainingMs)
     document.body.classList.remove('time-low')
+    this.audio.finish(escaped)
     this.emit({ type: escaped ? 'escaped' : 'time_up' })
     if (escaped) this.cameras.main.fadeOut(1600, 255, 236, 200)
     else this.cameras.main.fadeOut(1600, 60, 0, 0)
     this.ui.endScreen.show(escaped, this.state.timeRemainingMs)
+  }
+
+  /** A lightning flash through the windows; the thunder follows from RoomAudio. */
+  private lightning(): void {
+    this.cameras.main.flash(140, 110, 130, 190)
   }
 
   /** Emits a GameEvent with the room context every event carries. */
