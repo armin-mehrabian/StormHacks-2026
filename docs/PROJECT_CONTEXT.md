@@ -18,6 +18,7 @@ An AI narrator observes meaningful game events and reacts with short spoken line
 - **Gemini** generates contextual narrator text from structured game events.
 - **ElevenLabs** voices that text and may supply sound effects.
 - The **game engine, not Gemini,** controls puzzle solutions, inventory, the timer, and win conditions. The narrator only comments; it never decides game state.
+- The narrator is a **character**, not a chatbot. Its identity and story role are not decided yet: do not establish it as the facility AI, a captor, or anything else.
 
 ## Long-Term Idea
 
@@ -40,9 +41,13 @@ In the final room the narrator can become unreliable. Any lie must be defined by
 3. Timer
 4. Additional rooms
 
+Puzzle quality matters: puzzles should be fair, clued in the room, and satisfying on their own, independent of the narrator.
+
 ## Resilience Requirement
 
 A failed or slow API request must **not** block movement or make the puzzle impossible. The game must stay fully playable without Gemini or ElevenLabs.
+
+Fallbacks are for resilience, not the demo: when API keys are available, the first complete demo must use real Gemini text and real ElevenLabs speech.
 
 ## Decisions Needed (project owner)
 
@@ -50,5 +55,6 @@ Do not invent final answers for these; build so they can be swapped later.
 
 - [ ] Final art style
 - [ ] Narrator voice
+- [ ] Narrator identity and story role
 - [ ] Exact Bedroom puzzle solution
 - [ ] Final room puzzle (AI Control Room)
