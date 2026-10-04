@@ -1,48 +1,53 @@
 import type { GameEvent, NarratorEmotion, NarratorResponse } from '../../src/shared/contract.ts'
 
-// These lines refer only to the repeated action, not to any puzzle outcome.
-const FALLBACKS: Record<NarratorEmotion, readonly string[]> = {
-  sarcastic: [
-    'Again? A bold choice.',
-    'Consistency is one way to approach this.',
-    'You do seem committed to that approach.',
-  ],
-  hint: [
-    'Perhaps a different action is worth trying.',
-    'You have tried that more than once.',
-    'A change of approach may help.',
-  ],
-  warning: [
-    'Take a moment before trying that again.',
-    'You are repeating yourself. Stay alert.',
-    'Slow down and consider your next move.',
-  ],
-  praise: [
-    'Persistence noted.',
-    'You are paying attention.',
-    'That is a determined approach.',
-  ],
-  neutral: [
-    'You have tried that again.',
-    'The same action, once more.',
-    'Another attempt noted.',
-  ],
+// Used when Gemini is unavailable. Lines refer only to the event, never to puzzle answers;
+// hint events speak the engine's hint verbatim instead.
+const FALLBACKS: Record<GameEvent['type'], { emotion: NarratorEmotion; lines: readonly string[] }> = {
+  game_start: {
+    emotion: 'neutral',
+    lines: ['Rise and shine. The door is locked, and the clock is already running.'],
+  },
+  repeated_action: {
+    emotion: 'sarcastic',
+    lines: ['Again? A bold choice.', 'You and that thing are getting acquainted.', 'Consistency is one way to approach this.'],
+  },
+  nothing_found: {
+    emotion: 'sarcastic',
+    lines: ['Nothing. Shocking.', 'Thorough. Useless, but thorough.', 'Another dead end. Keep going.'],
+  },
+  item_found: {
+    emotion: 'praise',
+    lines: ['Oh, look at you, finding things.', 'Hold on to that.', 'Progress. Finally.'],
+  },
+  cipher_found: {
+    emotion: 'neutral',
+    lines: ['Scrambled letters. Someone wanted this to be annoying.'],
+  },
+  locked: {
+    emotion: 'sarcastic',
+    lines: ['Locked. As locks tend to be.', 'It does not open by wanting it harder.'],
+  },
+  wrong_code: {
+    emotion: 'sarcastic',
+    lines: ['Was that a code or a guess?', 'Wrong. Confidently wrong.', 'The lock is unimpressed.'],
+  },
+  unlocked: {
+    emotion: 'praise',
+    lines: ['It opened. I am almost proud.', 'Well, well. That worked.'],
+  },
+  near_solution: { emotion: 'hint', lines: ['You are close. Look around you.'] },
+  stuck: { emotion: 'hint', lines: ['Try something you have not tried yet.'] },
+  time_warning: {
+    emotion: 'warning',
+    lines: ['Tick tock. Time is not on your side.', 'The clock is winning.'],
+  },
+  escaped: { emotion: 'praise', lines: ['You escaped. I suppose congratulations are in order.'] },
+  time_up: { emotion: 'sarcastic', lines: ['Time is up. The room wins. It usually does.'] },
 }
 
-const DRAWER_LINES = [
-  'The drawer again? Bold strategy.',
-  'You and that drawer are getting acquainted.',
-  'Another look at the drawer. Persistent.',
-] as const
-
-export function fallbackNarration(
-  event: GameEvent,
-  preferredEmotion?: NarratorEmotion,
-): NarratorResponse {
-  const isDrawer = event.type === 'repeated_action' && event.objectId === 'drawer'
-  const emotion = preferredEmotion ?? (isDrawer ? 'sarcastic' : 'neutral')
-  const lines = isDrawer && emotion === 'sarcastic' ? DRAWER_LINES : FALLBACKS[emotion]
-  const index = Number.isFinite(event.count) ? Math.abs(Math.trunc(event.count ?? 0)) % lines.length : 0
-
-  return { line: lines[index], emotion, shouldSpeak: true }
+export function fallbackNarration(event: GameEvent): NarratorResponse {
+  if (event.hint) return { line: event.hint, emotion: 'hint', shouldSpeak: true }
+  const { emotion, lines } = FALLBACKS[event.type]
+  const line = lines[Math.floor(Math.random() * lines.length)] ?? lines[0]
+  return { line: line ?? '', emotion, shouldSpeak: true }
 }

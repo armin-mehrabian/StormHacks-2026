@@ -9,8 +9,35 @@ export const API_PATHS = {
 
 // Initial implementation choice, not a settled product decision.
 // Add new event types here as gameplay features land.
-export const GAME_EVENT_TYPES = ['repeated_action'] as const
+export const GAME_EVENT_TYPES = [
+  /** Run begins. */
+  'game_start',
+  /** Same object inspected again and again. */
+  'repeated_action',
+  /** Opened something with nothing useful inside. */
+  'nothing_found',
+  'item_found',
+  /** A cipher page was opened; plain pages are read aloud instead. */
+  'cipher_found',
+  /** Tried a lock without the key. */
+  'locked',
+  'wrong_code',
+  'unlocked',
+  /** Engine-chosen hint: player lingers near the next step. */
+  'near_solution',
+  /** Engine-chosen hint: player has done nothing useful for a while. */
+  'stuck',
+  'time_warning',
+  'escaped',
+  'time_up',
+] as const
 export type GameEventType = (typeof GAME_EVENT_TYPES)[number]
+
+/** Text limits for event context sent to the server. */
+export const EVENT_TEXT_LIMITS = {
+  field: 200,
+  recentLines: 5,
+} as const
 
 // Initial implementation choice, not a settled product decision.
 export const NARRATOR_EMOTIONS = ['sarcastic', 'hint', 'warning', 'praise', 'neutral'] as const
@@ -27,11 +54,24 @@ export const INITIAL_TIMEOUTS_MS = {
 export interface GameEvent {
   type: GameEventType
   roomId: string
-  /** Stable object ID shared by room data, gameplay, and narration, e.g. "drawer". */
-  objectId: string
+  /** Stable object ID shared by the blueprint, gameplay, and narration, e.g. "drawer". */
+  objectId?: string
+  /** Display name of the object, e.g. "Dresser". */
+  objectName?: string
+  /** Display name of the item involved, e.g. "Brass key". */
+  itemName?: string
+  /** Room title, for flavour. */
+  roomTitle?: string
   count?: number
-  /** Optional until the timer exists. */
   timeRemainingSeconds?: number
+  /** Engine-chosen hint text from the blueprint. The narrator may reword it but adds no facts. */
+  hint?: string
+  /** 0-based position on the hint ladder; higher is more explicit. */
+  hintLevel?: number
+  /** Small extra fact, e.g. the wrong code entered. */
+  detail?: string
+  /** The narrator's last few lines, so it can avoid repeating itself. */
+  recentLines?: string[]
 }
 
 /** POST /api/narrator: request body is a GameEvent. */
@@ -59,13 +99,26 @@ export function isNarratorEmotion(value: unknown): value is NarratorEmotion {
 export function isGameEvent(value: unknown): value is GameEvent {
   if (typeof value !== 'object' || value === null) return false
   const v = value as Record<string, unknown>
+  const optionalText = (field: unknown) =>
+    field === undefined || (typeof field === 'string' && field.length <= EVENT_TEXT_LIMITS.field)
+  const optionalNumber = (field: unknown) => field === undefined || (typeof field === 'number' && Number.isFinite(field))
   return (
     typeof v.type === 'string' &&
     (GAME_EVENT_TYPES as readonly string[]).includes(v.type) &&
     typeof v.roomId === 'string' &&
-    typeof v.objectId === 'string' &&
-    (v.count === undefined || typeof v.count === 'number') &&
-    (v.timeRemainingSeconds === undefined || typeof v.timeRemainingSeconds === 'number')
+    optionalText(v.objectId) &&
+    optionalText(v.objectName) &&
+    optionalText(v.itemName) &&
+    optionalText(v.roomTitle) &&
+    optionalText(v.hint) &&
+    optionalText(v.detail) &&
+    optionalNumber(v.count) &&
+    optionalNumber(v.timeRemainingSeconds) &&
+    optionalNumber(v.hintLevel) &&
+    (v.recentLines === undefined ||
+      (Array.isArray(v.recentLines) &&
+        v.recentLines.length <= EVENT_TEXT_LIMITS.recentLines &&
+        v.recentLines.every((line) => typeof line === 'string' && line.length <= EVENT_TEXT_LIMITS.field)))
   )
 }
 

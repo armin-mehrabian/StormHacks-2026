@@ -1,34 +1,41 @@
-// Client narrator orchestration: decides which GameEvents deserve narration, enforces a
-// cooldown, then asks the server for a line, shows the subtitle, and queues the voice.
-// Everything here is fire-and-forget; gameplay never waits on it.
+// Client narrator orchestration: decides which GameEvents deserve narration, rate-limits
+// them by importance, then asks the server for a line, queues the voice, and shows the
+// subtitle when that voice starts. Everything here is fire-and-forget; gameplay never waits.
 
-import { API_PATHS, INITIAL_TIMEOUTS_MS, isNarratorEmotion } from '../shared/contract.ts'
-import type { GameEvent, NarratorEmotion, NarratorResponse } from '../shared/contract.ts'
+import { API_PATHS, EVENT_TEXT_LIMITS, INITIAL_TIMEOUTS_MS, isNarratorEmotion } from '../shared/contract.ts'
+import type { GameEvent, GameEventType, NarratorEmotion, NarratorResponse } from '../shared/contract.ts'
 import type { GameEventEmitter } from '../game/events.ts'
 import type { AudioManager, SpeechPriority } from '../audio/AudioManager.ts'
 import { requestVoice } from '../audio/requestVoice.ts'
 
-/** Initial implementation choice: minimum gap between narrated events. */
-export const NARRATION_COOLDOWN_MS = 8000
+/**
+ * Importance per event (initial implementation choices). High always speaks; normal and
+ * low wait out their cooldown and are skipped while another line is being prepared.
+ */
+const EVENT_PRIORITY: Record<GameEventType, SpeechPriority> = {
+  game_start: 'high',
+  escaped: 'high',
+  time_up: 'high',
+  item_found: 'normal',
+  cipher_found: 'normal',
+  unlocked: 'normal',
+  near_solution: 'normal',
+  stuck: 'normal',
+  time_warning: 'normal',
+  repeated_action: 'low',
+  nothing_found: 'low',
+  locked: 'low',
+  wrong_code: 'low',
+}
+
+/** Minimum gap since the last narrated event, per priority. Initial implementation choices. */
+const COOLDOWN_MS: Record<SpeechPriority, number> = { high: 0, normal: 3000, low: 7000 }
 
 // Used when the server cannot be reached at all; the server has its own fallback set.
-const CLIENT_FALLBACK: NarratorResponse = {
-  line: 'Noted.',
-  emotion: 'neutral',
-  shouldSpeak: true,
-}
+const CLIENT_FALLBACK: NarratorResponse = { line: 'Noted.', emotion: 'neutral', shouldSpeak: true }
 
 export interface SubtitleView {
   show(line: string, emotion: NarratorEmotion): void
-}
-
-/** Trigger rules. Initial implementation choice: only repeated actions are narrated. */
-function shouldNarrate(event: Readonly<GameEvent>): boolean {
-  return event.type === 'repeated_action'
-}
-
-function priorityFor(_event: Readonly<GameEvent>): SpeechPriority {
-  return 'normal'
 }
 
 export class NarratorManager {
@@ -36,8 +43,9 @@ export class NarratorManager {
   private readonly audio: AudioManager
   private readonly subtitles: SubtitleView
   private readonly now: () => number
+  private readonly recentLines: string[] = []
   private lastNarratedAt = Number.NEGATIVE_INFINITY
-  private busy = false
+  private inFlight = 0
 
   constructor(events: GameEventEmitter, audio: AudioManager, subtitles: SubtitleView, now: () => number = Date.now) {
     this.events = events
@@ -53,25 +61,48 @@ export class NarratorManager {
     })
   }
 
+  /** Speaks text verbatim, e.g. a page the player is reading. No subtitle: the text is on screen. */
+  async readAloud(text: string): Promise<void> {
+    if (this.audio.isMuted()) return
+    const voice = await requestVoice({ line: text, emotion: 'neutral' })
+    if (voice) this.audio.enqueue(voice, 'high')
+  }
+
   private async handle(event: Readonly<GameEvent>): Promise<void> {
-    if (!shouldNarrate(event)) return
-    if (this.busy || this.now() - this.lastNarratedAt < NARRATION_COOLDOWN_MS) return
-    this.busy = true
+    const priority = EVENT_PRIORITY[event.type]
+    if (priority !== 'high') {
+      if (this.inFlight > 0) return
+      if (this.now() - this.lastNarratedAt < COOLDOWN_MS[priority]) return
+    }
     this.lastNarratedAt = this.now()
+    this.inFlight++
 
     try {
-      const narration = await fetchNarration(event)
+      const narration = await fetchNarration({ ...event, recentLines: [...this.recentLines] })
       if (!narration.shouldSpeak) return
+      this.remember(narration.line)
 
-      this.subtitles.show(narration.line, narration.emotion)
-
+      const show = () => this.subtitles.show(narration.line, narration.emotion)
       // Muted: subtitle only, and skip the voice request to save credits.
-      if (this.audio.isMuted()) return
+      if (this.audio.isMuted()) {
+        show()
+        return
+      }
       const voice = await requestVoice({ line: narration.line, emotion: narration.emotion })
-      if (voice) this.audio.enqueue(voice, priorityFor(event))
+      if (!voice) {
+        show()
+        return
+      }
+      // The subtitle appears when its voice starts, so text and speech stay in sync.
+      this.audio.enqueue(voice, priority, show)
     } finally {
-      this.busy = false
+      this.inFlight--
     }
+  }
+
+  private remember(line: string): void {
+    this.recentLines.push(line.slice(0, EVENT_TEXT_LIMITS.field))
+    if (this.recentLines.length > EVENT_TEXT_LIMITS.recentLines) this.recentLines.shift()
   }
 }
 
@@ -84,12 +115,17 @@ async function fetchNarration(event: Readonly<GameEvent>): Promise<NarratorRespo
       body: JSON.stringify(event),
       signal: AbortSignal.timeout(INITIAL_TIMEOUTS_MS.narrator),
     })
-    if (!response.ok) return CLIENT_FALLBACK
+    if (!response.ok) return event.hint ? hintFallback(event.hint) : CLIENT_FALLBACK
     const body: unknown = await response.json()
     return isNarratorResponse(body) ? body : CLIENT_FALLBACK
   } catch {
-    return CLIENT_FALLBACK
+    // Hints must reach the player even when the server is down.
+    return event.hint ? hintFallback(event.hint) : CLIENT_FALLBACK
   }
+}
+
+function hintFallback(hint: string): NarratorResponse {
+  return { line: hint, emotion: 'hint', shouldSpeak: true }
 }
 
 function isNarratorResponse(value: unknown): value is NarratorResponse {

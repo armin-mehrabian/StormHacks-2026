@@ -21,10 +21,10 @@ export class InspectionTracker {
 }
 
 /**
- * Returns the event to emit for an inspection, or null. Fires once, exactly when the
- * count reaches the threshold; whether the narrator reacts is not the game's call.
+ * Returns the event to emit for an inspection, or null. Fires at the threshold and every
+ * multiple of it (3, 6, 9...); whether the narrator reacts is not the game's call.
  */
 export function repeatedInspectionEvent(roomId: string, objectId: string, count: number): GameEvent | null {
-  if (count !== REPEATED_INSPECTION_THRESHOLD) return null
+  if (count < REPEATED_INSPECTION_THRESHOLD || count % REPEATED_INSPECTION_THRESHOLD !== 0) return null
   return { type: 'repeated_action', roomId, objectId, count }
 }

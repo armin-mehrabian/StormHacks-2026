@@ -27,6 +27,7 @@ interface QueuedSpeech {
   audio: Blob
   priority: SpeechPriority
   enqueuedAt: number
+  onStart?: () => void
 }
 
 const PRIORITY_RANK: Record<SpeechPriority, number> = { low: 0, normal: 1, high: 2 }
@@ -88,11 +89,12 @@ export class AudioManager {
   /**
    * Queue a line of speech. Returns false when it was not queued (muted, or the
    * lowest-priority entry in a full queue). Subtitles are the caller's job and
-   * must show regardless.
+   * must show regardless; onStart fires when this line begins playing, so a
+   * subtitle can appear in sync with its voice.
    */
-  enqueue(audio: Blob, priority: SpeechPriority = 'normal'): boolean {
+  enqueue(audio: Blob, priority: SpeechPriority = 'normal', onStart?: () => void): boolean {
     if (this.muted) return false
-    const entry: QueuedSpeech = { audio, priority, enqueuedAt: this.now() }
+    const entry: QueuedSpeech = { audio, priority, enqueuedAt: this.now(), onStart }
     // After every queued line of equal or higher priority.
     let index = this.queue.length
     while (index > 0 && PRIORITY_RANK[this.queue[index - 1].priority] < PRIORITY_RANK[priority]) index--
@@ -165,6 +167,7 @@ export class AudioManager {
       for (let next = this.takeNext(); next; next = this.takeNext()) {
         const playback = this.createPlayback(next.audio)
         this.current = playback
+        next.onStart?.()
         try {
           await playback.play(this.volume)
         } catch {
