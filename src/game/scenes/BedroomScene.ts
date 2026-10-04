@@ -16,7 +16,6 @@ const PLAYER_SPEED = 140
 /** Max gap in pixels between the player's centre and an object's edge for E to work. */
 const INTERACT_RANGE = PLAYER_SIZE / 2 + 12
 const INSPECT_MESSAGE_MS = 2000
-const EVENT_MESSAGE_MS = 4000
 
 const HUD_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
   fontFamily: 'monospace',
@@ -79,11 +78,6 @@ export class BedroomScene extends Phaser.Scene {
 
     this.createInput()
     this.createHud()
-
-    const unsubscribe = gameEvents.subscribe((event) => {
-      this.showMessage(`GameEvent: ${event.type} (${event.objectId} x${event.count ?? '?'})`, EVENT_MESSAGE_MS)
-    })
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, unsubscribe)
   }
 
   update(): void {

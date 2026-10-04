@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from '@google/genai'
+import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai'
 import {
   INITIAL_TIMEOUTS_MS,
   NARRATOR_EMOTIONS,
@@ -8,16 +8,32 @@ import {
 import type { GameEvent, NarratorResponse } from '../../src/shared/contract.ts'
 import { fallbackNarration } from './fallbacks.ts'
 
-const DEFAULT_MODEL = 'gemini-flash-latest'
+// Initial implementation choices. Measured live: flash-lite with minimal thinking answers
+// in under 1s; the full flash model spent the whole budget thinking and was cut off.
+// A GEMINI_MODEL override must support thinkingLevel MINIMAL or every call falls back.
+const DEFAULT_MODEL = 'gemini-flash-lite-latest'
+const THINKING_LEVEL = ThinkingLevel.MINIMAL
 const MAX_LINE_LENGTH = 160
 const MAX_WORDS = 25
+// Stay under the client's narrator timeout so a slow request returns a fallback from here.
+const UPSTREAM_TIMEOUT_MS = INITIAL_TIMEOUTS_MS.narrator - 500
 
 let client: GoogleGenAI | undefined
 let clientKey: string | undefined
+let warnedMissingKey = false
+
+// Fallback lines sound plausible, so log why one was used; otherwise a broken setup looks fine.
+function warnFallback(reason: string): void {
+  console.warn(`[narrator] using fallback line: ${reason}`)
+}
 
 function getClient(): GoogleGenAI | undefined {
   const key = process.env.GEMINI_API_KEY?.trim()
-  if (!key) return undefined
+  if (!key) {
+    if (!warnedMissingKey) warnFallback('GEMINI_API_KEY is not set')
+    warnedMissingKey = true
+    return undefined
+  }
 
   if (!client || clientKey !== key) {
     client = new GoogleGenAI({ apiKey: key })
@@ -66,7 +82,8 @@ export async function generateNarration(event: GameEvent): Promise<NarratorRespo
   let ai: GoogleGenAI | undefined
   try {
     ai = getClient()
-  } catch {
+  } catch (error) {
+    warnFallback(`client setup failed (${errorMessage(error)})`)
     return fallbackNarration(event)
   }
   if (!ai) return fallbackNarration(event)
@@ -101,21 +118,33 @@ export async function generateNarration(event: GameEvent): Promise<NarratorRespo
             required: ['line', 'emotion'],
           },
           maxOutputTokens: 160,
+          thinkingConfig: { thinkingLevel: THINKING_LEVEL },
         },
       }),
       new Promise<never>((_, reject) => {
         timeout = setTimeout(() => {
           controller.abort()
-          reject(new Error('Narrator request timed out'))
-        }, INITIAL_TIMEOUTS_MS.narrator)
+          reject(new Error(`timed out after ${UPSTREAM_TIMEOUT_MS}ms`))
+        }, UPSTREAM_TIMEOUT_MS)
       }),
     ])
 
-    return parseNarration(response.text) ?? fallbackNarration(event)
-  } catch {
+    const narration = parseNarration(response.text)
+    if (narration) return narration
+    const finishReason = response.candidates?.[0]?.finishReason ?? 'unknown'
+    warnFallback(`invalid model output (finishReason ${finishReason})`)
+    return fallbackNarration(event)
+  } catch (error) {
     // Missing service, rejected requests, and timeouts all keep narration available.
+    warnFallback(`request failed (${errorMessage(error)})`)
     return fallbackNarration(event)
   } finally {
     if (timeout !== undefined) clearTimeout(timeout)
   }
+}
+
+// Error messages from the SDK carry the API response, never the key.
+function errorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.length > 200 ? `${message.slice(0, 200)}…` : message
 }
