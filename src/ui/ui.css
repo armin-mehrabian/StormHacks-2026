@@ -856,3 +856,56 @@ body.dream-collapse #game canvas {
   animation: pop-in 0.35s cubic-bezier(0.2, 1.6, 0.4, 1);
   border-color: var(--gold-dim);
 }
+
+/* Hints are whispered: softer, italic. */
+.narrator[data-emotion='hint'] .narrator-text {
+  font-style: italic;
+  color: #cfe9e4;
+}
+
+/* ---------------------------------------------------------------- Radio dial */
+
+.radio-card {
+  background: linear-gradient(#5a3622, #2e1a12);
+  border-color: #7a4a2c;
+}
+
+.radio-display {
+  margin: 0 auto 14px;
+  padding: 8px 0 4px;
+  width: 220px;
+  font: 40px var(--font-body);
+  color: #ffb347;
+  text-shadow: 0 0 10px #ffb34799;
+  background: #120a06;
+  border: 3px solid #1a0f08;
+  box-shadow: inset 0 0 14px #000;
+}
+
+.radio-display.locked {
+  color: var(--praise);
+  text-shadow: 0 0 14px #9be37aaa;
+}
+
+.radio-meter {
+  position: relative;
+  height: 34px;
+  margin-bottom: 10px;
+  background: repeating-linear-gradient(90deg, #e9dcc0 0 2px, #cbb994 2px 18px);
+  border: 3px solid #1a0f08;
+}
+
+.radio-needle {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 3px;
+  background: #d22;
+  box-shadow: 0 0 6px #f44;
+  transform: translateX(-1px);
+}
+
+.radio-slider {
+  width: 100%;
+  accent-color: #ffb347;
+}

@@ -44,6 +44,19 @@ export const SFX = {
   'search-fear': { prompt: 'deep low heartbeat thump with a rising tense string swell, ominous', duration: 2.5 },
   'act-shift': { prompt: 'dreamy magical whoosh swell with shimmering chimes, the world transforming', duration: 3 },
 
+  'search-record_player': { prompt: 'needle dropping onto a vinyl record, soft crackle starting', duration: 1.5 },
+  'search-guitar': { prompt: 'a single soft strum of an acoustic guitar, slightly out of tune', duration: 1.5 },
+  'search-easel': { prompt: 'wooden easel creaking, a paintbrush tapping against a jar', duration: 1.2 },
+  'search-aquarium': { prompt: 'gentle aquarium bubbling and a small splash', duration: 1.5 },
+  'search-globe': { prompt: 'a desk globe spinning on its axis with a soft squeak', duration: 1.2 },
+  'search-typewriter': { prompt: 'a few typewriter keys clacking then a carriage slide', duration: 1.2 },
+  'search-teddy_bear': { prompt: 'squeezing a soft plush teddy bear, fabric rustle and a tiny squeak', duration: 1 },
+  'search-toy_chest': { prompt: 'opening a wooden toy chest lid, toys rattling inside', duration: 1.5 },
+  'search-computer': { prompt: 'old computer hard drive whirring and a keyboard clacking', duration: 1.5 },
+  'search-telescope': { prompt: 'brass telescope extending with a metallic slide and click', duration: 1.2 },
+  'search-coat_rack': { prompt: 'rummaging through coat pockets, keys and coins jingling', duration: 1.2 },
+  'search-trophy_shelf': { prompt: 'metal trophies clinking together on a wooden shelf', duration: 1 },
+
   // Pages and locks.
   'page-unfold': { prompt: 'unfolding an old piece of paper, crisp crinkle', duration: 1 },
   'locked-rattle': { prompt: 'doorknob rattling on a locked wooden door', duration: 1.2 },
@@ -63,6 +76,14 @@ export const SFX = {
   'clock-tick': { prompt: 'antique wall clock ticking steadily, close, dry', duration: 4, loop: true, influence: 0.7 },
   'lamp-hum': { prompt: 'faint electrical hum of an old incandescent lamp', duration: 4, loop: true },
   heartbeat: { prompt: 'slow heavy human heartbeat thumping, tense', duration: 4, loop: true },
+
+  'radio-station': { prompt: 'a distant late-night radio station playing soft old jazz, faint and warm, AM radio quality', duration: 10, loop: true },
+
+  // Intro typewriter: three takes so typing never sounds mechanical.
+  'type-1': { prompt: 'single key strike on an old mechanical typewriter, crisp, close, dry', duration: 0.5, influence: 0.7 },
+  'type-2': { prompt: 'single key strike on an old mechanical typewriter, crisp, close, dry', duration: 0.5, influence: 0.7 },
+  'type-3': { prompt: 'single soft key strike on a vintage typewriter, close, dry', duration: 0.5, influence: 0.7 },
+  'type-return': { prompt: 'old typewriter carriage return lever with a small ding bell', duration: 1.2 },
 
   // One-shots for mood and endings.
   thunder: { prompt: 'distant rolling thunder rumble outside, at night', duration: 5 },

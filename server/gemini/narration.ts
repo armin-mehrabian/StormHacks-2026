@@ -66,11 +66,11 @@ const EVENT_GUIDANCE: Record<GameEvent['type'], { task: string; length: Length; 
   wrong_code: { task: 'I entered the wrong code. A quick, embarrassed thought.', length: 'short', emotion: 'sarcastic' },
   unlocked: { task: 'Something just opened. A relieved little thought.', length: 'short', emotion: 'praise' },
   near_solution: {
-    task: 'A memory surfaces. Say the hint as my own sudden realisation, keeping its meaning exactly.',
+    task: 'A memory surfaces as a whisper. Start with [whispers] and say the hint as my own hushed realisation, keeping its meaning exactly.',
     length: 'medium', emotion: 'hint',
   },
   stuck: {
-    task: "I'm stuck, and then a memory surfaces. Say the hint as my own realisation, keeping its meaning exactly.",
+    task: "I'm stuck, and then a memory surfaces as a whisper. Start with [whispers] and say the hint as my own hushed realisation, keeping its meaning exactly.",
     length: 'medium', emotion: 'hint',
   },
   time_warning: { task: 'The dream is starting to fade and I can feel time running out. An anxious thought.', length: 'short', emotion: 'warning' },

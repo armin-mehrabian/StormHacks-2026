@@ -11,7 +11,7 @@ export const TIME_LIMIT_MS = 7 * 60 * 1000
 export type GameStatus = 'playing' | 'escaped' | 'time_up'
 
 /** Locks the player solves through a puzzle UI rather than by holding an item. */
-export type AnswerLock = Extract<Lock, { type: 'code' | 'word' | 'choice' | 'melody' | 'identity' | 'fear' }>
+export type AnswerLock = Extract<Lock, { type: 'code' | 'word' | 'choice' | 'tune' | 'melody' | 'identity' | 'fear' }>
 
 /** What the player submits: text for code/word/melody, an index for choice/fear, one text per identity blank. */
 export type Answer = string | number | string[]
@@ -213,6 +213,7 @@ export function clueIdsOf(lock: Lock): string[] {
     case 'code':
     case 'word':
     case 'choice':
+    case 'tune':
       return lock.clueIds
     case 'identity':
       return [...new Set(lock.questions.flatMap((q) => q.clueIds))]
@@ -234,6 +235,8 @@ function isCorrect(lock: Lock, answer: Answer): boolean {
       return same(answer, lock.word)
     case 'melody':
       return same(answer, lock.notes)
+    case 'tune':
+      return same(answer, lock.frequency)
     case 'choice':
     case 'fear':
       return answer === lock.answer

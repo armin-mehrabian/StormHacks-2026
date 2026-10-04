@@ -16,7 +16,7 @@ export function showStartScreen(ready: Promise<unknown>, parent: HTMLElement = d
 
   const title = document.createElement('h1')
   title.className = 'screen-title'
-  title.textContent = 'Escape Room A'
+  title.textContent = 'Escape The Storm'
   const tagline = document.createElement('small')
   tagline.textContent = 'whose dream is this?'
   title.append(tagline)

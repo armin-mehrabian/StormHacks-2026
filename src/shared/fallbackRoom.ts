@@ -113,7 +113,8 @@ export const FALLBACK_ROOM: RoomBlueprint = {
       slot: 'R2',
       name: 'Radio',
       act: 2,
-      description: 'My old radio. It always finds the late-night station.',
+      description: 'My old radio. Just static. Which station was it again?',
+      lock: { type: 'tune', frequency: '93.5', clueIds: ['page-diary'] },
       memory: {
         speaker: 'radio_host',
         speakerName: 'Night radio',
@@ -167,7 +168,7 @@ export const FALLBACK_ROOM: RoomBlueprint = {
       id: 'page-diary',
       kind: 'page',
       name: 'Diary page',
-      text: "Dear me, I can't sleep. My violin audition is at 9. Mom left a message, but I hid the tape somewhere warm so I would stop replaying it.",
+      text: "Dear me, I can't sleep. My violin audition is at 9. Mom left a message, but I hid the tape somewhere warm so I would stop replaying it. Only the night owl station, 93.5, ever helps.",
     },
     { id: 'cassette', kind: 'tool', name: 'Cassette: MOM' },
     {
@@ -203,7 +204,10 @@ export const FALLBACK_ROOM: RoomBlueprint = {
       targetId: 'toy_piano',
       lines: ['That melody... I could play it back.', 'E, D, C, D, E, E.', "Play Grandma's song on the toy piano."],
     },
-    { targetId: 'radio', lines: ['Who else talks to me this late at night?', 'Turn on the radio.'] },
+    {
+      targetId: 'radio',
+      lines: ['Who else talks to me this late at night?', 'My diary mentioned a station.', 'Tune the radio to 93.5.'],
+    },
     {
       targetId: 'case',
       lines: [

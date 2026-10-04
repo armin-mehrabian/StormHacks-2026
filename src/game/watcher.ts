@@ -13,20 +13,23 @@ const NEAR_RANGE_PX = 56
 const NEAR_RESET_RANGE_PX = 96
 const TIME_WARNINGS_S = [120, 60, 30] as const
 
-export type WatcherEvent = Pick<GameEvent, 'type' | 'objectId' | 'objectName' | 'hint' | 'hintLevel' | 'detail'>
+export type WatcherEvent = Pick<GameEvent, 'type' | 'objectId' | 'objectName' | 'hint' | 'hintLevel' | 'detail' | 'position'>
 
 export class PlayerWatcher {
   private readonly state: GameState
   private readonly emit: (event: WatcherEvent) => void
+  private readonly positionOf: (objectId: string) => { x: number; y: number } | undefined
   private readonly hintLevels = new Map<string, number>()
   private readonly warned = new Set<number>()
   private sinceProgressMs = 0
   private nearMs = 0
   private nearArmed = true
 
-  constructor(state: GameState, emit: (event: WatcherEvent) => void) {
+  /** positionOf places each hint's whisper at the object it points to. */
+  constructor(state: GameState, emit: (event: WatcherEvent) => void, positionOf: (objectId: string) => { x: number; y: number } | undefined) {
     this.state = state
     this.emit = emit
+    this.positionOf = positionOf
   }
 
   /** Call when the player makes real progress (finds, unlocks, reads something new). */
@@ -81,7 +84,8 @@ export class PlayerWatcher {
     const level = this.hintLevels.get(targetId) ?? 0
     const index = Math.min(level, ladder.lines.length - 1)
     this.hintLevels.set(targetId, level + 1)
-    // No objectId/objectName: they would reveal the answer before the ladder does.
-    this.emit({ type, hint: ladder.lines[index], hintLevel: index })
+    // No objectId/objectName: they would reveal the answer before the ladder does. The
+    // position stays on the client and only steers where the whisper is heard from.
+    this.emit({ type, hint: ladder.lines[index], hintLevel: index, position: this.positionOf(targetId) })
   }
 }

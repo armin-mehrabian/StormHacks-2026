@@ -27,10 +27,23 @@ export const OBJECT_KINDS = [
   'answering_machine',
   'radio',
   'music_box',
+  'record_player',
   // Story puzzle objects.
   'mirror',
   'toy_piano',
   'fear',
+  // More furniture and things, for variety.
+  'guitar',
+  'easel',
+  'aquarium',
+  'globe',
+  'typewriter',
+  'teddy_bear',
+  'toy_chest',
+  'computer',
+  'telescope',
+  'coat_rack',
+  'trophy_shelf',
 ] as const
 export type ObjectKind = (typeof OBJECT_KINDS)[number]
 
@@ -70,6 +83,43 @@ export const KIND_SPECS: Record<ObjectKind, KindSpec> = {
   mirror: { width: 1, height: 1, placement: 'top', solid: false, lockable: true, hangs: true },
   toy_piano: { width: 2, height: 1, placement: 'any', solid: true, lockable: true },
   fear: { width: 2, height: 2, placement: 'floor', solid: false, lockable: true },
+  record_player: { width: 1, height: 1, placement: 'any', solid: true, lockable: true },
+  guitar: { width: 1, height: 2, placement: 'wall', solid: true, lockable: false },
+  easel: { width: 1, height: 2, placement: 'any', solid: true, lockable: false },
+  aquarium: { width: 2, height: 1, placement: 'any', solid: true, lockable: false },
+  globe: { width: 1, height: 1, placement: 'any', solid: true, lockable: false },
+  typewriter: { width: 1, height: 1, placement: 'any', solid: true, lockable: false },
+  teddy_bear: { width: 1, height: 1, placement: 'any', solid: true, lockable: false },
+  toy_chest: { width: 2, height: 1, placement: 'any', solid: true, lockable: true },
+  computer: { width: 2, height: 1, placement: 'any', solid: true, lockable: true },
+  telescope: { width: 1, height: 2, placement: 'any', solid: true, lockable: false },
+  coat_rack: { width: 1, height: 2, placement: 'wall', solid: true, lockable: false },
+  trophy_shelf: { width: 2, height: 1, placement: 'top', solid: true, lockable: false },
+}
+
+/**
+ * Theme tags per kind, so a dream's furniture can fit the dreamer (a musician's room has a
+ * guitar). Initial implementation choice.
+ */
+export const KIND_TAGS: Partial<Record<ObjectKind, readonly string[]>> = {
+  guitar: ['music'],
+  record_player: ['music', 'cozy'],
+  easel: ['art'],
+  painting: ['art'],
+  trophy_shelf: ['sport'],
+  computer: ['work', 'study'],
+  typewriter: ['work', 'study', 'art'],
+  globe: ['study', 'travel'],
+  desk: ['study', 'work'],
+  bookshelf: ['study'],
+  aquarium: ['nature', 'care'],
+  plant: ['nature'],
+  telescope: ['night', 'study'],
+  teddy_bear: ['cozy', 'family', 'care'],
+  toy_chest: ['family', 'cozy'],
+  coat_rack: ['travel', 'work'],
+  rug: ['cozy'],
+  bed: ['cozy'],
 }
 
 /** Lock types that only make sense on one kind, and kinds that require them. */
@@ -84,8 +134,9 @@ export const MEMORY_KINDS = {
   answering_machine: 'phone',
   radio: 'radio',
   music_box: 'room',
+  record_player: 'vinyl',
 } as const satisfies Partial<Record<ObjectKind, MemoryEffect>>
-export type MemoryEffect = 'phone' | 'radio' | 'room'
+export type MemoryEffect = 'phone' | 'radio' | 'vinyl' | 'room'
 
 export function memoryEffect(kind: ObjectKind): MemoryEffect | undefined {
   return (MEMORY_KINDS as Partial<Record<ObjectKind, MemoryEffect>>)[kind]
@@ -163,6 +214,8 @@ export type Lock =
   | { type: 'word'; word: string; clueIds: string[] }
   /** A story question with three options; the right one appears in a clue. */
   | { type: 'choice'; question: string; options: string[]; answer: number; clueIds: string[] }
+  /** Tune the dial to a station (e.g. "93.5", 88.0-107.9) named in a clue. Radio only. */
+  | { type: 'tune'; frequency: string; clueIds: string[] }
   /** Replay the melody the music box (sourceId) plays. Toy piano only. */
   | { type: 'melody'; notes: string; sourceId: string }
   /** "Who am I?" Mirror only. */
@@ -378,6 +431,7 @@ export function validateBlueprint(bp: RoomBlueprint): ValidationResult {
     for (const [kind, type] of Object.entries(KIND_LOCKS)) {
       if (obj.lock?.type === type && obj.kind !== kind) err(`object "${obj.id}": ${type} locks only go on a ${kind}`)
     }
+    if (obj.lock?.type === 'tune' && obj.kind !== 'radio') err(`object "${obj.id}": tune locks only go on a radio`)
     if (obj.memory) {
       if (!memoryEffect(obj.kind)) err(`object "${obj.id}" (${obj.kind}) cannot hold a memory`)
       if (!obj.memory.text || obj.memory.text.length > L.maxMemoryText) err(`memory in "${obj.id}" missing or too long`)
@@ -397,7 +451,7 @@ export function validateBlueprint(bp: RoomBlueprint): ValidationResult {
     }
   }
   if (!bp.door.description || bp.door.description.length > L.maxDescription) err('door description missing or too long')
-  if (['melody', 'identity', 'fear', 'choice'].includes(bp.door.lock.type)) err(`the door cannot have a ${bp.door.lock.type} lock`)
+  if (['melody', 'identity', 'fear', 'choice', 'tune'].includes(bp.door.lock.type)) err(`the door cannot have a ${bp.door.lock.type} lock`)
   for (const item of bp.items) {
     if (!containedBy.has(item.id)) err(`item "${item.id}" is not inside any object`)
   }
@@ -453,6 +507,12 @@ export function validateBlueprint(bp: RoomBlueprint): ValidationResult {
             err(`"${ownerId}" wrong option "${option}" also appears in the clues`)
           }
         })
+        return
+      case 'tune':
+        if (!isFrequency(lock.frequency)) err(`"${ownerId}" frequency must look like 93.5 (88.0-107.9)`)
+        if (!lock.clueIds.length || !cluesMention(ownerId, lock.clueIds, lock.frequency)) {
+          err(`"${ownerId}" frequency ${lock.frequency} is not in its clues`)
+        }
         return
       case 'melody': {
         if (!isMelody(lock.notes)) err(`"${ownerId}" melody must be 3-6 notes from ${NOTES.join('')}`)
@@ -542,6 +602,7 @@ export function validateBlueprint(bp: RoomBlueprint): ValidationResult {
       case 'code':
       case 'word':
       case 'choice':
+      case 'tune':
         needClues(stepId, lock.clueIds)
         break
       case 'melody':
@@ -598,6 +659,11 @@ export function validateBlueprint(bp: RoomBlueprint): ValidationResult {
 /** The act an object appears in (1 when unset). */
 export function objectAct(obj: BlueprintObject | undefined): number {
   return obj?.act ?? 1
+}
+
+/** A radio frequency with one decimal in the FM band, e.g. "93.5". */
+export function isFrequency(value: string): boolean {
+  return /^(8[89]|9\d|10[0-7])\.\d$/.test(value)
 }
 
 function isMelody(notes: string): boolean {

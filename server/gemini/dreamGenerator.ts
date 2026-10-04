@@ -13,6 +13,7 @@ import {
   DOOR_ID,
   DREAM_MOODS,
   KIND_SPECS,
+  KIND_TAGS,
   NOTES,
   SLOT_IDS,
   mentions,
@@ -36,7 +37,7 @@ const MEMORY_SPEAKERS = CAST_ROLES.filter((role) => !role.startsWith('self_'))
 // Puzzle skeleton (engine-made, random each run)
 // ---------------------------------------------------------------------------------------
 
-type MemoryKind = 'answering_machine' | 'radio' | 'music_box'
+type MemoryKind = 'answering_machine' | 'radio' | 'music_box' | 'record_player'
 type Role =
   | 'diary_box'
   | 'tool_box'
@@ -62,7 +63,7 @@ const ROLE_PURPOSE: Record<Role, string> = {
   memory_b: 'memory B (appears in act 2)',
   memory_c: 'memory C (appears in act 2)',
   piano: 'a toy piano; replaying the music box song opens it and reveals an old photo (act 2)',
-  lockbox: 'a box with a 3-digit lock; the digits are the numbers said in memories A, B, C (act 2)',
+  lockbox: 'a locked box; the code is the numbers said in memories A, B, C, in order (act 2)',
   mirror: 'a mirror where I must remember who I am (act 2)',
   fear: 'the fear made visible, a symbolic image of the worry (act 3)',
   herring_1: 'a funny red herring with nothing useful (act 1)',
@@ -89,12 +90,34 @@ const TOOL_FOR: Record<MemoryKind, string> = {
   answering_machine: 'a cassette tape',
   radio: 'batteries',
   music_box: 'a tiny winding key',
+  record_player: 'a record needle',
+}
+
+/** Pools to draw furniture from; theme tags make matching kinds more likely. */
+const HERRING_POOL: ObjectKind[] = ['bed', 'plant', 'painting', 'clock', 'rug', 'dresser', 'guitar', 'easel', 'aquarium', 'globe', 'telescope', 'coat_rack', 'trophy_shelf', 'teddy_bear']
+const TOOL_BOX_POOL: ObjectKind[] = ['lamp', 'wardrobe', 'trash_can', 'nightstand', 'typewriter', 'teddy_bear', 'globe', 'coat_rack']
+const DIARY_BOX_POOL: ObjectKind[] = ['bookshelf', 'desk', 'nightstand', 'typewriter']
+/** The act-2 locked box: a keypad lockbox, a toy chest (code), or a computer (password). */
+const LOCKED_BOX_POOL: ObjectKind[] = ['lockbox', 'toy_chest', 'computer']
+
+/** Weighted pick: kinds sharing a tag with the dream are four times as likely. */
+function pickThemed(pool: readonly ObjectKind[], tags: readonly string[], exclude: ReadonlySet<ObjectKind>): ObjectKind {
+  const options = pool.filter((kind) => !exclude.has(kind))
+  const weights = options.map((kind) => 1 + 3 * (KIND_TAGS[kind] ?? []).filter((tag) => tags.includes(tag)).length)
+  let roll = Math.random() * weights.reduce((sum, w) => sum + w, 0)
+  for (let i = 0; i < options.length; i++) {
+    roll -= weights[i] ?? 0
+    if (roll <= 0) return options[i] as ObjectKind
+  }
+  return options[options.length - 1] as ObjectKind
 }
 
 interface Skeleton {
   kinds: Record<Role, ObjectKind>
   slots: Record<Role, SlotId>
   melody: string
+  /** Set when the radio appears in act 2: it must be tuned to this station first. */
+  frequency?: string
 }
 
 function pick<T>(list: readonly T[]): T {
@@ -121,26 +144,31 @@ function randomMelody(): string {
   return notes
 }
 
-/** Random furniture and slots; tries combinations until every object fits. */
-function makeSkeleton(): Skeleton {
+/** Random, themed furniture and slots; tries combinations until every object fits. */
+function makeSkeleton(tags: readonly string[]): Skeleton {
   for (let attempt = 0; attempt < 50; attempt++) {
-    const [a, b, c] = shuffle<MemoryKind>(['answering_machine', 'radio', 'music_box'])
-    const herrings = shuffle<ObjectKind>(['bed', 'plant', 'painting', 'clock', 'rug', 'dresser']).slice(0, 3)
-    const toolBox = pick((['lamp', 'wardrobe', 'trash_can', 'nightstand'] as ObjectKind[]).filter((k) => !herrings.includes(k)))
-    const diaryBox = pick((['bookshelf', 'desk', 'nightstand'] as ObjectKind[]).filter((k) => k !== toolBox))
+    // The music box is always there (its song opens the toy piano); two more voices join it.
+    const memoryKinds = shuffle<MemoryKind>(['music_box', ...shuffle<MemoryKind>(['answering_machine', 'radio', 'record_player']).slice(0, 2)])
+    const [a, b, c] = memoryKinds
+    const used = new Set<ObjectKind>([...memoryKinds, 'toy_piano', 'mirror', 'fear'])
+    const take = (pool: readonly ObjectKind[]) => {
+      const kind = pickThemed(pool, tags, used)
+      used.add(kind)
+      return kind
+    }
     const kinds: Record<Role, ObjectKind> = {
-      diary_box: diaryBox,
-      tool_box: toolBox,
       memory_a: a as ObjectKind,
       memory_b: b as ObjectKind,
       memory_c: c as ObjectKind,
       piano: 'toy_piano',
-      lockbox: 'lockbox',
       mirror: 'mirror',
       fear: 'fear',
-      herring_1: herrings[0] as ObjectKind,
-      herring_2: herrings[1] as ObjectKind,
-      herring_3: herrings[2] as ObjectKind,
+      lockbox: take(LOCKED_BOX_POOL),
+      diary_box: take(DIARY_BOX_POOL),
+      tool_box: take(TOOL_BOX_POOL),
+      herring_1: take(HERRING_POOL),
+      herring_2: take(HERRING_POOL),
+      herring_3: take(HERRING_POOL),
     }
     // Place the most constrained objects first.
     const rank = { top: 0, floor: 1, wall: 2, any: 3 } as const
@@ -157,7 +185,9 @@ function makeSkeleton(): Skeleton {
       slots[role] = free[index] as SlotId
       free.splice(index, 1)
     }
-    if (placed) return { kinds, slots, melody: randomMelody() }
+    // A radio that appears in act 2 must be tuned (in act 1 it needs batteries instead).
+    const frequency = memoryKinds.includes('radio') && a !== 'radio' ? `${88 + Math.floor(Math.random() * 20)}.${Math.floor(Math.random() * 10)}` : undefined
+    if (placed) return { kinds, slots, melody: randomMelody(), frequency }
   }
   throw new Error('could not place the skeleton')
 }
@@ -177,6 +207,7 @@ interface DreamStory {
   memories: { speaker: CastRole; speakerName: string; text: string }[]
   personIndex: number
   toolName: string
+  password?: string
   objects: { role: Role; name: string; description: string }[]
   diary: string
   photo: string
@@ -224,6 +255,7 @@ const STORY_SCHEMA = {
     ),
     personIndex: { type: 'integer', description: 'Index (0-2) of the memory from the person who matters most.' },
     toolName: str('Name of the small tool, e.g. "Cassette: MOM".'),
+    password: str('Only if the locked box is a computer: one 4-8 letter word (a pet, a place) that memory B says out loud.'),
     objects: list(
       {
         type: 'object',
@@ -272,38 +304,46 @@ The engine has already built the puzzle; you write everything a player reads or 
 - hints: 1-2 vague nudges per role, in the dreamer's own words; the engine adds the explicit final hint.
 - title max ${L.maxTitle}, introLine max ${L.maxIntro}, situation max ${L.maxSituation}, personality max ${L.maxPersonality}, worry max ${L.maxAnswer}.`
 
-/** A random starting point per dream so runs don't converge on the same story. */
-const WORRIES = [
-  'a driving test in the morning',
-  'moving to a new city alone next week',
-  'telling their best friend a secret they have kept for years',
-  'a first date tomorrow night',
-  'the last day before their family dog is rehomed',
-  'a cooking competition final',
-  'their grandparent moving into a care home',
-  'a big exam they have barely studied for',
-  'their first day as a night-shift nurse',
-  'performing stand-up comedy for the first time',
-  'a job interview at their dream bakery',
-  'their younger sibling leaving for college',
-  'a swim meet they have trained a whole year for',
-  'apologising to someone they hurt',
-  'opening their tiny bookshop for the very first time',
-  'their band playing its first real gig',
-] as const
+/** A random starting point per dream, with theme tags that steer the furniture. */
+const WORRIES: { text: string; tags: string[] }[] = [
+  { text: 'a driving test in the morning', tags: ['travel'] },
+  { text: 'moving to a new city alone next week', tags: ['travel', 'family'] },
+  { text: 'telling their best friend a secret they have kept for years', tags: ['cozy'] },
+  { text: 'a first date tomorrow night', tags: ['cozy', 'music'] },
+  { text: 'the last day before their family dog is rehomed', tags: ['family', 'care', 'nature'] },
+  { text: 'a cooking competition final', tags: ['work', 'art'] },
+  { text: 'their grandparent moving into a care home', tags: ['family', 'care', 'music'] },
+  { text: 'a big exam they have barely studied for', tags: ['study'] },
+  { text: 'their first day as a night-shift nurse', tags: ['care', 'work', 'night'] },
+  { text: 'performing stand-up comedy for the first time', tags: ['art', 'night'] },
+  { text: 'a job interview at their dream bakery', tags: ['work'] },
+  { text: 'their younger sibling leaving for college', tags: ['family', 'study'] },
+  { text: 'a swim meet they have trained a whole year for', tags: ['sport'] },
+  { text: 'apologising to someone they hurt', tags: ['cozy', 'family'] },
+  { text: 'opening their tiny bookshop for the very first time', tags: ['study', 'work'] },
+  { text: 'their band playing its first real gig', tags: ['music', 'night'] },
+  { text: 'their first solo art exhibition', tags: ['art'] },
+  { text: 'the night before a stargazing competition', tags: ['night', 'study'] },
+]
 const NAMES_F = ['Ana', 'Priya', 'Zoe', 'Hana', 'Grace', 'Lucia', 'Nadia', 'Ruby', 'Mei', 'Imani'] as const
 const NAMES_M = ['Omar', 'Theo', 'Kenji', 'Mateo', 'Sam', 'Ravi', 'Jonah', 'Felix', 'Diego', 'Kwame'] as const
 
-function storyPrompt(skeleton: Skeleton): string {
+function storyPrompt(skeleton: Skeleton, worry: string): string {
   const voice = Math.random() < 0.5 ? 'self_f' : 'self_m'
   const name = pick(voice === 'self_f' ? NAMES_F : NAMES_M)
   const age = 14 + Math.floor(Math.random() * 50)
   const objects = ROLES.map((role) => `- ${role}: a ${skeleton.kinds[role].replace('_', ' ')} (${ROLE_PURPOSE[role]})`)
   const memoryKinds = MEMORY_ROLES.map((role, i) => `${'ABC'[i]} = the ${skeleton.kinds[role].replace('_', ' ')}`)
   return [
-    `This dream's dreamer: ${name}, ${age}, voice ${voice}, worried about ${pick(WORRIES)}.`,
+    `This dream's dreamer: ${name}, ${age}, voice ${voice}, worried about ${worry}.`,
     `Objects in the room (write a name and description for every role):\n${objects.join('\n')}`,
     `Memories: ${memoryKinds.join(', ')}. Memory A only plays after inserting the tool (${TOOL_FOR[skeleton.kinds.memory_a as MemoryKind]}).`,
+    ...(skeleton.kinds.lockbox === 'computer'
+      ? ['The locked box is an old computer: write a password (one 4-8 letter word, like a pet\'s or place\'s name) and have memory B say that word out loud.']
+      : []),
+    ...(skeleton.frequency
+      ? [`The radio only plays once tuned to ${skeleton.frequency}: mention the station "${skeleton.frequency}" naturally in the diary (a favourite late-night station).`]
+      : []),
     'Write the story now. Return only JSON.',
   ].join('\n\n')
 }
@@ -341,7 +381,8 @@ function assemble(skeleton: Skeleton, story: DreamStory): RoomBlueprint {
     situation: clip(story.dreamer?.situation, L.maxSituation, 'Something big happens tomorrow.'),
     personality: clip(story.dreamer?.personality, L.maxPersonality, 'Anxious, funny, kind.'),
     voice: story.dreamer?.voice === 'self_m' ? ('self_m' as const) : ('self_f' as const),
-    mood: (DREAM_MOODS as readonly string[]).includes(story.dreamer?.mood) ? story.dreamer.mood : pick(DREAM_MOODS),
+    // The engine picks the colour: left to the writer, nearly every dream came out amber.
+    mood: pick(DREAM_MOODS),
   }
   const worry = clip(story.worry, L.maxAnswer, 'big day')
   const written = (role: Role) => story.objects?.find((o) => o.role === role)
@@ -360,8 +401,9 @@ function assemble(skeleton: Skeleton, story: DreamStory): RoomBlueprint {
   })
   const digits = memories.map((m) => m.text.match(/[1-9]/)?.[0] ?? '1')
 
-  let diary = clip(story.diary, L.maxPageText - 40, "I can't sleep.")
+  let diary = clip(story.diary, L.maxPageText - 70, "I can't sleep.")
   if (!mentions(diary, worry)) diary += ` Tomorrow: my ${worry}.`
+  if (skeleton.frequency && !diary.includes(skeleton.frequency)) diary += ` Night station: ${skeleton.frequency}.`
 
   const items: BlueprintItem[] = [
     { id: 'page-diary', kind: 'page', name: 'Diary page', text: diary },
@@ -389,13 +431,23 @@ function assemble(skeleton: Skeleton, story: DreamStory): RoomBlueprint {
     object.memory = memories[i]
     if (object.kind === 'music_box') object.melody = skeleton.melody
     if (role === 'memory_a') object.lock = { type: 'item', itemId: 'tool' }
+    else if (object.kind === 'radio' && skeleton.frequency) object.lock = { type: 'tune', frequency: skeleton.frequency, clueIds: ['page-diary'] }
     objects.push(object)
   })
   const musicBox = objects.find((o) => o.kind === 'music_box')
   objects.push({ ...base('diary_box'), contains: 'page-diary' })
   objects.push({ ...base('tool_box'), contains: 'tool' })
   objects.push({ ...base('piano'), contains: 'photo', lock: { type: 'melody', notes: skeleton.melody, sourceId: musicBox?.id ?? '' } })
-  objects.push({ ...base('lockbox'), contains: 'keepsake', lock: { type: 'code', code: digits.join(''), clueIds: MEMORY_ROLES.map((r) => ids[r]) } })
+  let password = (story.password ?? '').replace(/[^A-Za-z]/g, '').slice(0, 8)
+  if (password.length < 3) password = pick(['Biscuit', 'Pepper', 'Maple', 'Juniper', 'Comet'])
+  if (skeleton.kinds.lockbox === 'computer') {
+    // The password must be said in memory B; add it if the writer forgot.
+    const memoryB = memories[1]
+    if (memoryB && !mentions(memoryB.text, password)) memoryB.text += ` Give ${password} a hug for me.`
+    objects.push({ ...base('lockbox'), contains: 'keepsake', lock: { type: 'word', word: password, clueIds: [ids.memory_b] } })
+  } else {
+    objects.push({ ...base('lockbox'), contains: 'keepsake', lock: { type: 'code', code: digits.join(''), clueIds: MEMORY_ROLES.map((r) => ids[r]) } })
+  }
 
   const memoryClue = (role: (typeof MEMORY_ROLES)[number]) => {
     const m = memories[MEMORY_ROLES.indexOf(role)]
@@ -435,14 +487,19 @@ function assemble(skeleton: Skeleton, story: DreamStory): RoomBlueprint {
 
   // Hints: Gemini's vague nudges, then an explicit line the engine guarantees.
   const code = digits.join('')
+  const memoryFinal = (role: Role) =>
+    skeleton.kinds[role] === 'radio' && skeleton.frequency ? `Tune the ${nameOf(role)} to ${skeleton.frequency}.` : `Play the ${nameOf(role)}.`
   const finalHint: Record<Role | 'door', string> = {
     diary_box: `Check the ${nameOf('diary_box')}.`,
     tool_box: `Look in the ${nameOf('tool_box')}.`,
     memory_a: `Use the ${items[1]?.name} on the ${nameOf('memory_a')}.`,
-    memory_b: `Play the ${nameOf('memory_b')}.`,
-    memory_c: `Play the ${nameOf('memory_c')}.`,
+    memory_b: memoryFinal('memory_b'),
+    memory_c: memoryFinal('memory_c'),
     piano: `Play ${[...skeleton.melody].join(', ')} on the ${nameOf('piano')}.`,
-    lockbox: `The ${nameOf('lockbox')} code is ${[...code].join(', ')}.`,
+    lockbox:
+      skeleton.kinds.lockbox === 'computer'
+        ? `The ${nameOf('lockbox')} password is ${password}.`
+        : `The ${nameOf('lockbox')} code is ${[...code].join(', ')}.`,
     mirror: `Look in the ${nameOf('mirror')}.`,
     fear: `Face ${fearName}.`,
     herring_1: '',
@@ -492,10 +549,11 @@ export async function generateDream(): Promise<DreamResponse> {
     const model = models[Math.min(modelIndex, models.length - 1)] ?? MODEL_CHAIN[0]
     const started = Date.now()
     try {
-      const skeleton = makeSkeleton()
+      const worry = pick(WORRIES)
+      const skeleton = makeSkeleton(worry.tags)
       const response = await client.models.generateContent({
         model,
-        contents: storyPrompt(skeleton),
+        contents: storyPrompt(skeleton, worry.text),
         config: {
           systemInstruction: SYSTEM_INSTRUCTION,
           responseMimeType: 'application/json',

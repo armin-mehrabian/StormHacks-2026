@@ -53,16 +53,25 @@ export class NarratorManager {
   private readonly audio: AudioManager
   private readonly subtitles: SubtitleView
   private readonly now: () => number
+  private readonly placeVoice: (clip: Blob, at: { x: number; y: number }) => void
   private readonly recentLines: string[] = []
   private lastNarratedAt = Number.NEGATIVE_INFINITY
   private inFlight = 0
   private dreamer: Dreamer | undefined
   private readonly memoryClips = new Map<string, Promise<Blob | null>>()
 
-  constructor(events: GameEventEmitter, audio: AudioManager, subtitles: SubtitleView, now: () => number = Date.now) {
+  /** placeVoice positions a clip in the room (used for whispered hints). */
+  constructor(
+    events: GameEventEmitter,
+    audio: AudioManager,
+    subtitles: SubtitleView,
+    placeVoice: (clip: Blob, at: { x: number; y: number }) => void = () => {},
+    now: () => number = Date.now,
+  ) {
     this.events = events
     this.audio = audio
     this.subtitles = subtitles
+    this.placeVoice = placeVoice
     this.now = now
   }
 
@@ -130,7 +139,9 @@ export class NarratorManager {
     this.inFlight++
 
     try {
-      const narration = await fetchNarration({ ...event, ...this.dreamerContext(), recentLines: [...this.recentLines] })
+      // The position never leaves the client; it only places the whisper in the room.
+      const { position, ...shared } = event
+      const narration = await fetchNarration({ ...shared, ...this.dreamerContext(), recentLines: [...this.recentLines] })
       if (!narration.shouldSpeak) return
       // Audio tags like [sighs] are acted by the voice, never shown. They stay in the
       // remembered lines so Gemini can vary them.
@@ -148,6 +159,7 @@ export class NarratorManager {
         show()
         return
       }
+      if (position) this.placeVoice(voice, position)
       // The subtitle appears when its voice starts, so text and speech stay in sync.
       this.audio.enqueue(voice, priority, show)
     } finally {

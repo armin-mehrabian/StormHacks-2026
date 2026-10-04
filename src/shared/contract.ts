@@ -115,6 +115,11 @@ export interface GameEvent {
   dreamerPersona?: string
   /** The dreamer's name and situation. The inner voice may only say it on 'escaped'. */
   dreamerSecret?: string
+  /**
+   * Client only, never sent to the server: where in the room the line should come from
+   * (hints are whispered from the direction of the answer).
+   */
+  position?: { x: number; y: number }
 }
 
 /** POST /api/narrator: request body is a GameEvent. */

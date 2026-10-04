@@ -6,6 +6,7 @@ import type { SoundEngine } from '../../audio/SoundEngine.ts'
 import type { CodeLock } from '../../ui/CodeLock.ts'
 import type { Notebook } from '../../ui/Notebook.ts'
 import type { ChoicePuzzle, IdentityBoard, PianoPuzzle } from '../../ui/StoryPuzzles.ts'
+import type { RadioDial } from '../../ui/RadioDial.ts'
 import type { EndScreen } from '../../ui/EndScreen.ts'
 import type { Hud } from '../../ui/Hud.ts'
 import { modalBlocksInput } from '../../ui/modal.ts'
@@ -19,8 +20,8 @@ import {
   PLAYER_FRAME_H,
   PLAYER_KEY,
   SPARK_KEY,
-  WALL_FACE_KEY,
   createRoomArt,
+  wallFaceKey,
   furnitureKey,
   playerFrame,
 } from '../art.ts'
@@ -83,6 +84,7 @@ export interface BedroomUi {
   choice: ChoicePuzzle
   identity: IdentityBoard
   piano: PianoPuzzle
+  radio: RadioDial
   notebook: Notebook
 }
 
@@ -93,7 +95,8 @@ export interface BedroomSceneData {
   voice: {
     readAloud(text: string): void
     prefetchMemories(memories: { objectId: string; memory: Memory }[]): void
-    playMemory(objectId: string, memory: Memory): void
+    /** at: where the voice comes from (the object playing it). */
+    playMemory(objectId: string, memory: Memory, at: { x: number; y: number }): void
   }
   sound: SoundEngine
   /** Called once when the run ends, with what happened. */
@@ -150,12 +153,19 @@ export class BedroomScene extends Phaser.Scene {
     this.soundEngine = data.sound
     this.room = layoutRoom(data.state.blueprint)
     this.interactables = []
-    this.watcher = new PlayerWatcher(this.state, (event) => this.emit(event))
+    this.watcher = new PlayerWatcher(
+      this.state,
+      (event) => this.emit(event),
+      (objectId) => {
+        const object = this.room.objects.find((o) => o.id === objectId)
+        return object && { x: object.x + object.width / 2, y: object.y + object.height / 2 }
+      },
+    )
   }
 
   create(): void {
     const { room } = this
-    createRoomArt(this, ROOM_COLS, ROOM_ROWS, room.objects)
+    createRoomArt(this, ROOM_COLS, ROOM_ROWS, room.objects, this.state.blueprint.dreamer.mood)
     this.physics.world.setBounds(0, 0, room.width, room.height)
 
     this.add.image(0, 0, FLOOR_KEY).setOrigin(0).setScale(ART_SCALE).setDepth(DEPTH.FLOOR)
@@ -229,7 +239,7 @@ export class BedroomScene extends Phaser.Scene {
   private createWalls(solids: Phaser.Physics.Arcade.StaticGroup): void {
     const { room } = this
     // The top wall shows its papered face; the others are seen from above.
-    this.add.image(0, 0, WALL_FACE_KEY).setOrigin(0).setScale(ART_SCALE).setDepth(DEPTH.WALLS)
+    this.add.image(0, 0, wallFaceKey(this.state.blueprint.dreamer.mood)).setOrigin(0).setScale(ART_SCALE).setDepth(DEPTH.WALLS)
     for (const wall of room.walls) {
       const isTop = wall.y === 0 && wall.width === room.width
       const block = this.add.rectangle(wall.x, wall.y, wall.width, wall.height, WALL_TOP_COLOR).setOrigin(0)
@@ -244,12 +254,17 @@ export class BedroomScene extends Phaser.Scene {
 
   private createDecor(decor: DecorPlan): void {
     for (const piece of decor.pieces) {
-      this.add
+      const image = this.add
         .image(piece.x, piece.y, piece.key)
         .setOrigin(0)
         .setScale(ART_SCALE)
         .setFlipX(piece.flipX ?? false)
         .setDepth(piece.layer === 'wall' ? DEPTH.WALLS + 0.5 : DEPTH.RUG + 0.5)
+      if (piece.glow !== undefined) {
+        // Fairy lights glow through the darkness, with a soft twinkle.
+        image.setTint(piece.glow).setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.HIGHLIGHT - 1)
+        this.tweens.add({ targets: image, alpha: 0.45, duration: 900 + Math.random() * 1400, yoyo: true, repeat: -1, delay: Math.random() * 1500 })
+      }
     }
     // Faint moonlight shafts falling from the windows, visible through the darkness.
     const shafts = this.add.graphics().setDepth(DEPTH.HIGHLIGHT - 1).setBlendMode(Phaser.BlendModes.ADD)
@@ -564,6 +579,9 @@ export class BedroomScene extends Phaser.Scene {
       case 'melody':
         this.ui.piano.show(lock.notes.length, submit)
         break
+      case 'tune':
+        this.ui.radio.show(object.label, lock.frequency, submit)
+        break
     }
   }
 
@@ -596,6 +614,10 @@ export class BedroomScene extends Phaser.Scene {
       this.ui.notice.show(`"${said}"`, 4000)
       this.cameras.main.flash(900, 255, 240, 210)
       this.emit({ type: 'fear_faced', objectId: object.id, objectName: object.label, detail: `I told myself: ${said}` })
+    } else if (this.state.object(object.id)?.memory) {
+      // A tuned radio (or any unlocked memory object) speaks straight away.
+      const memory = this.state.object(object.id)?.memory
+      this.time.delayedCall(400, () => memory && this.playMemory(object, memory))
     } else if (result.item) {
       this.ui.notice.show(`The ${object.label.toLowerCase()} opens. I found: ${result.item.name}`)
       this.collect(object, result.item)
@@ -650,7 +672,7 @@ export class BedroomScene extends Phaser.Scene {
     const effect = object.kind !== 'door' ? memoryEffect(object.kind) : undefined
     const source = effect === 'phone' ? 'Voicemail' : effect === 'radio' ? 'Radio' : 'Memory'
     this.ui.pages.showTranscript(`${source} · ${memory.speakerName}`, memory.text)
-    this.voice.playMemory(object.id, memory)
+    this.voice.playMemory(object.id, memory, { x: object.x + object.width / 2, y: object.y + object.height / 2 })
     if (this.ui.notebook.add(`${object.id}-memory`, `${source} · ${memory.speakerName}`, memory.text)) {
       this.ui.hud.setNotebookCount(this.ui.notebook.count)
     }

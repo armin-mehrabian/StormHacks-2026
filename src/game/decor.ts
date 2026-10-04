@@ -2,7 +2,9 @@
 // in the corners, and clutter on free floor tiles. Deterministic per room title, so a
 // room always looks the same. Pure, so it can be previewed outside Phaser.
 
-import { CLUTTER_KEYS, COBWEB_KEY, SCONCE_KEY, WINDOW_KEY } from './art.ts'
+import { KIND_TAGS } from '../shared/blueprint.ts'
+import type { ObjectKind } from '../shared/blueprint.ts'
+import { CLUTTER_KEYS, COBWEB_KEY, FAIRY_LIGHT_KEY, POSTER_KEYS, SCONCE_KEY, WINDOW_KEY } from './art.ts'
 import { TILE_SIZE } from './rooms/layout.ts'
 import type { RoomData } from './rooms/types'
 
@@ -14,6 +16,8 @@ export interface DecorPiece {
   y: number
   layer: DecorLayer
   flipX?: boolean
+  /** Glowing pieces (fairy lights) show through the darkness, tinted this colour. */
+  glow?: number
 }
 
 export interface DecorLight {
@@ -45,10 +49,23 @@ export function planDecor(room: RoomData, seed: string): DecorPlan {
   const lights: DecorLight[] = []
   const windows: DecorPlan['windows'] = []
 
-  for (const col of WINDOW_COLS) {
+  // A themed poster replaces the second window when the room says something about its owner.
+  const poster = posterTheme(room)
+  WINDOW_COLS.forEach((col, i) => {
+    if (poster && i === WINDOW_COLS.length - 1) {
+      pieces.push({ key: POSTER_KEYS[poster], x: col * TILE_SIZE, y: 0, layer: 'wall' })
+      return
+    }
     pieces.push({ key: WINDOW_KEY, x: col * TILE_SIZE, y: 0, layer: 'wall' })
     lights.push({ x: col * TILE_SIZE + TILE_SIZE / 2, y: TILE_SIZE * 1.6, kind: 'moon' })
     windows.push({ x: col * TILE_SIZE + 4, width: TILE_SIZE - 8 })
+  })
+
+  // A string of fairy lights along the top of the back wall.
+  const BULBS = [0xffd27a, 0xff8fb1, 0x8fd6ff, 0xb6ff9b]
+  for (let x = TILE_SIZE + 6, i = 0; x < room.width - TILE_SIZE; x += 22, i++) {
+    const sag = Math.round(Math.sin((x / 88) * Math.PI) * 2) * 2
+    pieces.push({ key: FAIRY_LIGHT_KEY, x, y: 4 + Math.abs(sag), layer: 'wall', glow: BULBS[i % BULBS.length] })
   }
   for (const col of SCONCE_COLS) {
     pieces.push({ key: SCONCE_KEY, x: col * TILE_SIZE, y: 0, layer: 'wall' })
@@ -92,6 +109,13 @@ export function planDecor(room: RoomData, seed: string): DecorPlan {
   })
 
   return { pieces, lights, windows }
+}
+
+/** A poster theme from the furniture in the room, if any fits. */
+function posterTheme(room: RoomData): keyof typeof POSTER_KEYS | undefined {
+  const tags = new Set(room.objects.flatMap((o) => (o.kind === 'door' ? [] : (KIND_TAGS[o.kind as ObjectKind] ?? []))))
+  for (const theme of ['music', 'sport', 'night', 'art'] as const) if (tags.has(theme)) return theme
+  return undefined
 }
 
 function hashString(text: string): number {

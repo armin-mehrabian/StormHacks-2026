@@ -10,7 +10,7 @@ import type { PlaybackFactory, SpeechPlayback } from './AudioManager.ts'
 
 export type Bus = 'voice' | 'music' | 'ambience' | 'sfx'
 /** How a voice clip sounds: through a phone, a radio, or plainly in the room. */
-export type VoiceEffect = 'phone' | 'radio' | 'room'
+export type VoiceEffect = 'phone' | 'radio' | 'vinyl' | 'room'
 export type SoundKey = SfxKey | MusicKey
 
 /** Initial mix levels (0-1). */
@@ -23,18 +23,33 @@ const DUCK_RELEASE_S = 0.8
 const VOICE_REVERB_SECONDS = 2.2
 const VOICE_REVERB_MIX = 0.22
 
+/** A point in the room, in world pixels. */
+export interface Point {
+  x: number
+  y: number
+}
+
 export interface PlayOptions {
   bus?: Bus
   volume?: number
   /** Playback speed; also shifts pitch. */
   rate?: number
-  /** -1 (left) to 1 (right). */
+  /** -1 (left) to 1 (right). Ignored when `at` is set. */
   pan?: number
+  /** Place the sound in the room: 3D (HRTF) relative to the listener, with distance falloff. */
+  at?: Point
+  /** How quickly a placed sound fades with distance (default 1.2). */
+  rolloff?: number
 }
+
+/** World pixels per audio-space metre: the room is about 6 by 5 metres. */
+const PIXELS_PER_METRE = 100
 
 export interface LoopHandle {
   setVolume(volume: number, rampSeconds?: number): void
   setPan(pan: number): void
+  /** Moves a placed loop (one started with `at`). */
+  setPosition(point: Point): void
   setRate(rate: number): void
   stop(fadeSeconds?: number): void
 }
@@ -47,6 +62,7 @@ export class SoundEngine {
   private readonly buffers = new Map<SoundKey, AudioBuffer>()
   private speaking = 0
   private readonly effects = new WeakMap<Blob, VoiceEffect>()
+  private readonly positions = new WeakMap<Blob, Point>()
   private muted = false
 
   constructor() {
@@ -117,8 +133,8 @@ export class SoundEngine {
   /** Starts a seamless loop. Starts silent if volume is 0, so callers can fade it in. */
   loop(key: SoundKey, options: PlayOptions = {}): LoopHandle {
     const buffer = this.buffers.get(key)
-    if (!buffer) return { setVolume() {}, setPan() {}, setRate() {}, stop() {} }
-    const { source, gain, panner } = this.chain(buffer, options)
+    if (!buffer) return { setVolume() {}, setPan() {}, setPosition() {}, setRate() {}, stop() {} }
+    const { source, gain, panner, spatial } = this.chain(buffer, options)
     source.loop = true
     gain.connect(this.buses[options.bus ?? 'ambience'])
     // Random start point so several loops never phase in sync.
@@ -129,7 +145,8 @@ export class SoundEngine {
         gain.gain.cancelScheduledValues(now())
         gain.gain.setTargetAtTime(volume, now(), rampSeconds / 3)
       },
-      setPan: (pan) => panner.pan.setTargetAtTime(clamp(pan, -1, 1), now(), 0.05),
+      setPan: (pan) => panner?.pan.setTargetAtTime(clamp(pan, -1, 1), now(), 0.05),
+      setPosition: (point) => spatial && this.placeNode(spatial, point),
       setRate: (rate) => source.playbackRate.setTargetAtTime(rate, now(), 0.2),
       stop: (fadeSeconds = 0.5) => {
         gain.gain.cancelScheduledValues(now())
@@ -175,6 +192,44 @@ export class SoundEngine {
     return notes.length * beat + 1
   }
 
+  /**
+   * The radio dial's sound: static plus a distant station through the radio filter.
+   * setSignal(0..1) crossfades from pure static to a clear station.
+   */
+  tuner(): { setSignal(signal: number): void; stop(): void } {
+    const now = () => this.ctx.currentTime
+    const filter = (type: BiquadFilterType, frequency: number) => {
+      const node = this.ctx.createBiquadFilter()
+      node.type = type
+      node.frequency.value = frequency
+      return node
+    }
+    const staticGain = this.ctx.createGain()
+    staticGain.gain.value = 0.3
+    const noise = this.ctx.createBufferSource()
+    noise.buffer = this.noiseBuffer()
+    noise.loop = true
+    noise.connect(filter('bandpass', 2200)).connect(staticGain).connect(this.buses.sfx)
+    noise.start()
+    const station = this.loop('radio-station', { bus: 'sfx', volume: 0 })
+    return {
+      setSignal: (signal) => {
+        const s = clamp(signal, 0, 1)
+        staticGain.gain.setTargetAtTime(0.3 * (1 - s) + 0.02, now(), 0.05)
+        station.setVolume(0.9 * s * s, 0.1)
+      },
+      stop: () => {
+        staticGain.gain.setTargetAtTime(0, now(), 0.1)
+        station.stop(0.3)
+        try {
+          noise.stop(now() + 0.4)
+        } catch {
+          // Already stopped.
+        }
+      },
+    }
+  }
+
   setMuted(muted: boolean): void {
     this.muted = muted
     this.master.gain.setTargetAtTime(muted ? 0 : 1, this.ctx.currentTime, 0.05)
@@ -186,6 +241,26 @@ export class SoundEngine {
 
   setBusVolume(bus: Bus, volume: number): void {
     this.buses[bus].gain.setTargetAtTime(clamp(volume, 0, 1), this.ctx.currentTime, 0.05)
+  }
+
+  /** The player's position: every placed sound is heard relative to it. Call every frame. */
+  setListener(point: Point): void {
+    const listener = this.ctx.listener
+    const x = point.x / PIXELS_PER_METRE
+    const z = point.y / PIXELS_PER_METRE
+    if (listener.positionX) {
+      const t = this.ctx.currentTime
+      listener.positionX.setTargetAtTime(x, t, 0.05)
+      listener.positionY.setTargetAtTime(0, t, 0.05)
+      listener.positionZ.setTargetAtTime(z, t, 0.05)
+    } else {
+      listener.setPosition(x, 0, z)
+    }
+  }
+
+  /** Marks a voice clip to be heard from a point in the room (e.g. a whisper from the answer). */
+  tagPosition(audio: Blob, point: Point): void {
+    this.positions.set(audio, point)
   }
 
   /** Marks a voice clip to be played through a phone or radio filter by voicePlayback. */
@@ -206,7 +281,9 @@ export class SoundEngine {
         source.buffer = buffer
         const effect = this.effects.get(audio) ?? 'room'
         const stopStatic = this.applyEffect(source, effect, gain)
-        gain.connect(this.buses.voice)
+        const at = this.positions.get(audio)
+        if (at) gain.connect(this.spatialNode(at, 1)).connect(this.buses.voice)
+        else gain.connect(this.buses.voice)
         this.startSpeaking()
         await new Promise<void>((resolve) => {
           source!.onended = () => resolve()
@@ -250,6 +327,24 @@ export class SoundEngine {
       shaper.curve = softClipCurve(3)
       source.connect(filter('highpass', 450)).connect(filter('lowpass', 3200)).connect(shaper).connect(output)
       return () => {}
+    }
+    if (effect === 'vinyl') {
+      // Warm and a little muffled, with soft crackle underneath, like an old record.
+      source.connect(filter('highpass', 180)).connect(filter('lowpass', 5200)).connect(output)
+      const crackle = this.ctx.createBufferSource()
+      crackle.buffer = this.noiseBuffer()
+      crackle.loop = true
+      const crackleGain = this.ctx.createGain()
+      crackleGain.gain.value = 0.02
+      crackle.connect(filter('highpass', 4000)).connect(crackleGain).connect(output)
+      crackle.start()
+      return () => {
+        try {
+          crackle.stop()
+        } catch {
+          // Already stopped.
+        }
+      }
     }
     // Radio: band-limited voice plus a bed of static.
     source.connect(filter('highpass', 300)).connect(filter('peaking', 1800, 1)).connect(filter('lowpass', 4200)).connect(output)
@@ -295,12 +390,41 @@ export class SoundEngine {
     const source = this.ctx.createBufferSource()
     source.buffer = buffer
     source.playbackRate.value = options.rate ?? 1
-    const panner = this.ctx.createStereoPanner()
-    panner.pan.value = clamp(options.pan ?? 0, -1, 1)
     const gain = this.ctx.createGain()
     gain.gain.value = options.volume ?? 1
+    if (options.at) {
+      const spatial = this.spatialNode(options.at, options.rolloff ?? 1.2)
+      source.connect(spatial).connect(gain)
+      return { source, gain, panner: undefined, spatial }
+    }
+    const panner = this.ctx.createStereoPanner()
+    panner.pan.value = clamp(options.pan ?? 0, -1, 1)
     source.connect(panner).connect(gain)
-    return { source, gain, panner }
+    return { source, gain, panner, spatial: undefined }
+  }
+
+  /** An HRTF panner at a room point: direction from the listener plus distance falloff. */
+  private spatialNode(point: Point, rolloff: number): PannerNode {
+    const panner = this.ctx.createPanner()
+    panner.panningModel = 'HRTF'
+    panner.distanceModel = 'inverse'
+    panner.refDistance = 1
+    panner.maxDistance = 12
+    panner.rolloffFactor = rolloff
+    this.placeNode(panner, point)
+    return panner
+  }
+
+  private placeNode(panner: PannerNode, point: Point): void {
+    const x = point.x / PIXELS_PER_METRE
+    const z = point.y / PIXELS_PER_METRE
+    if (panner.positionX) {
+      panner.positionX.value = x
+      panner.positionY.value = 0
+      panner.positionZ.value = z
+    } else {
+      panner.setPosition(x, 0, z)
+    }
   }
 
   private startSpeaking(): void {

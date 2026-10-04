@@ -6,7 +6,15 @@ import { modalClosed, modalOpened } from './modal.ts'
 const CHARS_PER_SECOND = 32
 const PAUSE_AFTER_LINE_MS = 900
 
-export function playIntro(lines: string[], onStart: () => void = () => {}, parent: HTMLElement = document.body): Promise<void> {
+export interface IntroHooks {
+  onStart?: () => void
+  /** Each character as it is typed (for a typewriter click). */
+  onChar?: (char: string) => void
+  /** After each line finishes typing (for a carriage return). */
+  onLineEnd?: () => void
+}
+
+export function playIntro(lines: string[], hooks: IntroHooks = {}, parent: HTMLElement = document.body): Promise<void> {
   const root = document.createElement('div')
   root.className = 'intro'
   const list = document.createElement('div')
@@ -17,7 +25,7 @@ export function playIntro(lines: string[], onStart: () => void = () => {}, paren
   root.append(list, skip)
   parent.appendChild(root)
   modalOpened()
-  onStart()
+  hooks.onStart?.()
 
   return new Promise((resolve) => {
     let finished = false
@@ -52,7 +60,13 @@ export function playIntro(lines: string[], onStart: () => void = () => {}, paren
         setTimeout(() => {
           list.append(p)
           for (let i = 1; i <= line.length; i++) {
-            timers.push(setTimeout(() => (p.textContent = line.slice(0, i)), (i * 1000) / CHARS_PER_SECOND))
+            timers.push(
+              setTimeout(() => {
+                p.textContent = line.slice(0, i)
+                hooks.onChar?.(line[i - 1] ?? '')
+                if (i === line.length) hooks.onLineEnd?.()
+              }, (i * 1000) / CHARS_PER_SECOND),
+            )
           }
         }, at),
       )

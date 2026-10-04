@@ -39,17 +39,24 @@ const SEARCH_SOUND: Record<RoomObjectData['kind'], SfxKey> = {
   mirror: 'search-mirror',
   toy_piano: 'search-toy_piano',
   fear: 'search-fear',
+  record_player: 'search-record_player',
+  guitar: 'search-guitar',
+  easel: 'search-easel',
+  aquarium: 'search-aquarium',
+  globe: 'search-globe',
+  typewriter: 'search-typewriter',
+  teddy_bear: 'search-teddy_bear',
+  toy_chest: 'search-toy_chest',
+  computer: 'search-computer',
+  telescope: 'search-telescope',
+  coat_rack: 'search-coat_rack',
+  trophy_shelf: 'search-trophy_shelf',
   door: 'locked-rattle',
 }
 
+/** Loops placed in the room (3D: direction and distance come from SoundEngine). */
 interface PlacedLoop {
   handle: LoopHandle
-  points: { x: number; y: number }[]
-  /** Distance at which the sound fades to its floor level. */
-  range: number
-  base: number
-  /** Fraction of base still heard far away. */
-  floor: number
 }
 
 export class RoomAudio {
@@ -81,16 +88,15 @@ export class RoomAudio {
     const { sound } = this
     this.house = sound.loop('amb-house', { volume: 0.45 })
 
-    const windows = this.decor.windows.map((w) => ({ x: w.x + w.width / 2, y: 40 }))
-    if (windows.length) this.place('amb-rain', windows, 300, 0.75, 0.35)
+    // The storm is everywhere (a quiet bed), and loudest at each window.
+    this.place('amb-rain', null, 0.25)
+    for (const w of this.decor.windows) this.place('amb-rain', { x: w.x + w.width / 2, y: 40 }, 0.7, 0.9)
 
     const clock = this.room.objects.find((o) => o.kind === 'clock')
     // Every room ticks; with no clock object, the ticking comes from behind the door.
-    const clockPoint = clock ? centre(clock) : { x: this.room.width / 2, y: 0 }
-    this.clock = this.place('clock-tick', [clockPoint], 260, 0.55, 0.15)
+    this.clock = this.place('clock-tick', clock ? centre(clock) : { x: this.room.width / 2, y: 0 }, 0.6, 1)
 
-    const lamps = this.room.objects.filter((o) => o.kind === 'lamp').map(centre)
-    if (lamps.length) this.place('lamp-hum', lamps, 110, 0.4, 0)
+    for (const lamp of this.room.objects.filter((o) => o.kind === 'lamp')) this.place('lamp-hum', centre(lamp), 0.45, 2.2)
 
     this.heartbeat = sound.loop('heartbeat', { volume: 0, bus: 'sfx' })
 
@@ -101,18 +107,8 @@ export class RoomAudio {
 
   /** Call every frame with the player's feet position. */
   update(deltaMs: number, x: number, y: number, moving: boolean, timeRemainingMs: number): void {
-    for (const loop of this.placed) {
-      const nearest = loop.points.reduce(
-        (best, p) => {
-          const d = Math.hypot(p.x - x, p.y - y)
-          return d < best.d ? { d, p } : best
-        },
-        { d: Infinity, p: loop.points[0] ?? { x, y } },
-      )
-      const falloff = Math.max(0, 1 - nearest.d / loop.range) ** 1.5
-      loop.handle.setVolume(loop.base * (loop.floor + (1 - loop.floor) * falloff))
-      loop.handle.setPan(((nearest.p.x - x) / loop.range) * 0.8)
-    }
+    // Everything placed in the room is heard from where the player stands.
+    this.sound.setListener({ x, y })
 
     if (moving) {
       this.stepTimer += deltaMs
@@ -200,9 +196,10 @@ export class RoomAudio {
     this.sound.play(STEP_KEYS[index] ?? 'step-1', { volume: 0.32, rate: randomBetween(0.92, 1.08) })
   }
 
-  private place(key: SfxKey, points: { x: number; y: number }[], range: number, base: number, floor: number): LoopHandle {
-    const handle = this.sound.loop(key, { volume: 0 })
-    this.placed.push({ handle, points, range, base, floor })
+  /** Starts an ambience loop, placed at a point (3D) or everywhere (null). */
+  private place(key: SfxKey, at: { x: number; y: number } | null, volume: number, rolloff?: number): LoopHandle {
+    const handle = this.sound.loop(key, at ? { volume, at, rolloff } : { volume })
+    this.placed.push({ handle })
     return handle
   }
 }

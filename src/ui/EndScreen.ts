@@ -9,6 +9,7 @@ import { modalOpened } from './modal.ts'
 
 /** Lets the dreamer's final line be heard before the screen covers the room. */
 const REVEAL_DELAY_MS = 1800
+const JOURNAL_CHARS_PER_SECOND = 45
 const CARD_WIDTH = 1200
 const CARD_HEIGHT = 675
 
@@ -72,12 +73,21 @@ export class EndScreen {
     }, REVEAL_DELAY_MS)
   }
 
-  /** Fills in the journal once Gemini has written it. */
-  setJournal(entry: string, dreamer: Dreamer, title: string, stats: RunStats): void {
+  /** Types the journal in once Gemini has written it; onChar can click a typewriter. */
+  setJournal(entry: string, dreamer: Dreamer, title: string, stats: RunStats, onChar?: (char: string) => void): void {
     const clean = stripAudioTags(entry)
-    this.journalText.textContent = clean
     this.card = { dreamer, title, entry: clean, stats }
-    this.saveButton.hidden = false
+    this.journalText.textContent = ''
+    let shown = 0
+    const timer = setInterval(() => {
+      shown++
+      this.journalText.textContent = clean.slice(0, shown)
+      onChar?.(clean[shown - 1] ?? '')
+      if (shown >= clean.length) {
+        clearInterval(timer)
+        this.saveButton.hidden = false
+      }
+    }, 1000 / JOURNAL_CHARS_PER_SECOND)
   }
 
   destroy(): void {
@@ -122,7 +132,7 @@ export class EndScreen {
     ctx.fillText(stats.escaped ? `Woke up with ${formatClock(stats.secondsLeft)} to spare` : 'Sank deeper into the dream', 72, 604)
     ctx.fillStyle = '#b9ab90'
     ctx.textAlign = 'right'
-    ctx.fillText('Escape Room A  ·  voices by ElevenLabs  ·  dreamt by Gemini', CARD_WIDTH - 72, 604)
+    ctx.fillText('Escape The Storm  ·  voices by ElevenLabs  ·  dreamt by Gemini', CARD_WIDTH - 72, 604)
 
     const link = document.createElement('a')
     link.download = `dream-journal-${dreamer.name.toLowerCase()}.png`

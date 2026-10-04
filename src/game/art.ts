@@ -84,7 +84,19 @@ function hash(x: number, y: number): number {
 // ---------------------------------------------------------------------------------------
 
 export const FLOOR_KEY = 'art-floor'
-export const WALL_FACE_KEY = 'art-wall-face'
+/** Wallpaper colours (base, stripe, fleck) per dream mood. Initial implementation choice. */
+const WALLPAPERS: Record<string, [string, string, string]> = {
+  violet: ['#2a2a40', '#212034', '#3a3a5a'],
+  blue: ['#1f2f45', '#182538', '#2f4766'],
+  amber: ['#3a2c1f', '#2e2218', '#55412c'],
+  green: ['#1f3529', '#182a20', '#2e4d3b'],
+  rose: ['#3a2230', '#2e1a26', '#553245'],
+}
+
+/** The back wall's texture key for a dream mood. */
+export function wallFaceKey(mood: string): string {
+  return `art-wall-face-${mood}`
+}
 export const WALL_TOP_KEY = 'art-wall-top'
 
 /** The whole floor as one texture (cols x rows tiles), planks running horizontally. */
@@ -108,14 +120,15 @@ function drawFloor(ctx: Ctx, cols: number, rows: number): void {
   }
 }
 
-function drawWallFace(ctx: Ctx, cols: number): void {
+function drawWallFace(ctx: Ctx, cols: number, mood: string): void {
   const w = cols * T
-  rect(ctx, 0, 0, w, T, C.wallpaper)
+  const [base, stripe, fleck] = WALLPAPERS[mood] ?? WALLPAPERS.violet ?? [C.wallpaper, C.wallpaperDark, C.wallpaperFleck]
+  rect(ctx, 0, 0, w, T, base)
   // Vertical stripes and a small damask fleck.
-  for (let x = 0; x < w; x += 6) rect(ctx, x, 2, 2, T - 4, C.wallpaperDark)
+  for (let x = 0; x < w; x += 6) rect(ctx, x, 2, 2, T - 4, stripe)
   for (let x = 3; x < w; x += 12) {
-    rect(ctx, x, 6, 1, 1, C.wallpaperFleck)
-    rect(ctx, x + 6, 10, 1, 1, C.wallpaperFleck)
+    rect(ctx, x, 6, 1, 1, fleck)
+    rect(ctx, x + 6, 10, 1, 1, fleck)
   }
   // Crown molding and baseboard.
   rect(ctx, 0, 0, w, 2, C.trim)
@@ -348,6 +361,137 @@ const FURNITURE: Record<RoomObjectData['kind'], (ctx: Ctx, w: number, h: number)
     rect(ctx, w / 2 - 1, h - 19, 2, 4, C.wood)
     rect(ctx, w / 2 - 1, h - 13, 2, 1, C.ink)
   },
+  record_player(ctx) {
+    rect(ctx, 1, 6, 14, 9, C.woodDark) // cabinet
+    rect(ctx, 2, 7, 12, 7, C.woodMid)
+    rect(ctx, 2, 2, 12, 6, C.ink) // record
+    rect(ctx, 4, 3, 8, 4, '#2a2333')
+    rect(ctx, 7, 4, 2, 2, C.red) // label
+    rect(ctx, 12, 2, 1, 5, C.metalHi) // tone arm
+    rect(ctx, 10, 6, 3, 1, C.metalHi)
+    rect(ctx, 4, 10, 2, 2, C.gold) // knobs
+    rect(ctx, 10, 10, 2, 2, C.gold)
+  },
+  guitar(ctx, w, h) {
+    rect(ctx, 7, 1, 2, 14, C.woodDark) // neck
+    rect(ctx, 6, 0, 4, 3, C.wood) // head
+    for (let y = 4; y < 15; y += 3) rect(ctx, 7, y, 2, 1, C.metalHi) // frets
+    rect(ctx, 3, 15, 10, 13, C.terracotta) // body
+    rect(ctx, 4, 14, 8, 2, C.terracottaHi)
+    rect(ctx, 5, 26, 6, 2, C.terracotta)
+    rect(ctx, 6, 19, 4, 4, C.ink) // sound hole
+    rect(ctx, 5, 25, 6, 1, C.woodDark) // bridge
+    void w
+    void h
+  },
+  easel(ctx, w, h) {
+    rect(ctx, 3, 10, 1, h - 10, C.woodDark) // legs
+    rect(ctx, 12, 10, 1, h - 10, C.woodDark)
+    rect(ctx, 7, 12, 2, h - 12, C.wood)
+    rect(ctx, 2, 1, 12, 13, C.paper) // canvas
+    rect(ctx, 3, 2, 10, 4, '#9fd0e8') // painted sky
+    rect(ctx, 3, 6, 10, 3, C.greenHi) // hills
+    rect(ctx, 9, 3, 2, 2, C.goldHi) // sun
+    rect(ctx, 2, 14, 12, 1, C.woodLight) // ledge
+    rect(ctx, 4, 13, 3, 1, C.red) // paint tubes
+    rect(ctx, 9, 13, 2, 1, C.teal)
+    void w
+  },
+  aquarium(ctx, w, h) {
+    rect(ctx, 0, 1, w, h - 1, C.metalDark)
+    rect(ctx, 1, 2, w - 2, h - 4, '#2e6f8e') // water
+    rect(ctx, 1, 2, w - 2, 2, '#4f9ec0')
+    rect(ctx, 1, h - 4, w - 2, 2, C.creamShade) // sand
+    rect(ctx, 5, 5, 3, 2, C.goldHi) // fish
+    rect(ctx, 8, 5, 1, 2, C.gold)
+    rect(ctx, 20, 8, 3, 2, C.redHi)
+    rect(ctx, 19, 8, 1, 2, C.red)
+    rect(ctx, 13, 6, 1, h - 10, C.green) // weed
+    rect(ctx, 26, 4, 1, 1, C.cream) // bubbles
+    rect(ctx, 25, 7, 1, 1, C.cream)
+  },
+  globe(ctx) {
+    rect(ctx, 6, 13, 4, 2, C.woodDark) // stand
+    rect(ctx, 7, 11, 2, 2, C.gold)
+    rect(ctx, 3, 2, 10, 10, '#3f7bb0') // ocean
+    rect(ctx, 4, 1, 8, 1, '#3f7bb0')
+    rect(ctx, 4, 12, 8, 0, '#3f7bb0')
+    rect(ctx, 5, 4, 3, 3, C.greenHi) // continents
+    rect(ctx, 9, 6, 2, 4, C.green)
+    rect(ctx, 6, 9, 2, 1, C.green)
+    rect(ctx, 2, 2, 1, 10, C.gold) // meridian
+  },
+  typewriter(ctx) {
+    rect(ctx, 1, 6, 14, 9, C.ink)
+    rect(ctx, 2, 7, 12, 7, '#3b4a3f')
+    rect(ctx, 3, 1, 10, 6, C.paper) // paper
+    rect(ctx, 4, 3, 7, 1, C.creamShade)
+    rect(ctx, 0, 6, 16, 1, C.metalHi) // carriage
+    for (let x = 3; x < 13; x += 2) rect(ctx, x, 10, 1, 1, C.cream) // keys
+    for (let x = 4; x < 12; x += 2) rect(ctx, x, 12, 1, 1, C.cream)
+  },
+  teddy_bear(ctx) {
+    rect(ctx, 4, 6, 8, 8, C.woodLight) // body
+    rect(ctx, 5, 1, 6, 6, C.woodLight) // head
+    rect(ctx, 4, 1, 2, 2, C.wood) // ears
+    rect(ctx, 10, 1, 2, 2, C.wood)
+    rect(ctx, 6, 3, 1, 1, C.ink) // eyes
+    rect(ctx, 9, 3, 1, 1, C.ink)
+    rect(ctx, 7, 5, 2, 1, C.woodDark) // nose
+    rect(ctx, 6, 8, 4, 4, C.creamShade) // tummy
+    rect(ctx, 6, 6, 4, 1, C.red) // bow
+  },
+  toy_chest(ctx, w, h) {
+    rect(ctx, 0, 2, w, h - 2, C.woodDark)
+    rect(ctx, 1, 3, w - 2, h - 4, '#3f7bb0')
+    rect(ctx, 1, 3, w - 2, 3, '#5b95c8') // lid
+    for (let x = 3; x < w - 3; x += 7) {
+      rect(ctx, x, 8, 3, 3, C.goldHi) // painted stars
+    }
+    rect(ctx, w / 2 - 2, 6, 4, 3, C.gold) // latch
+  },
+  computer(ctx, w, h) {
+    rect(ctx, 0, 9, w, h - 9, C.woodMid) // desk top
+    rect(ctx, 0, 9, w, 1, C.woodHi)
+    rect(ctx, 6, 0, 18, 11, C.creamShade) // CRT
+    rect(ctx, 8, 1, 14, 8, '#0e2a1a') // screen
+    rect(ctx, 9, 2, 6, 1, '#5fd38a') // text glow
+    rect(ctx, 9, 4, 9, 1, '#5fd38a')
+    rect(ctx, 9, 6, 2, 1, '#9be37a') // cursor
+    rect(ctx, 8, 12, 14, 3, C.cream) // keyboard
+  },
+  telescope(ctx, w, h) {
+    rect(ctx, 4, 16, 1, h - 16, C.metalDark) // tripod
+    rect(ctx, 11, 16, 1, h - 16, C.metalDark)
+    rect(ctx, 7, 16, 2, h - 16, C.metalDark)
+    rect(ctx, 6, 13, 4, 3, C.metal)
+    rect(ctx, 3, 2, 4, 12, C.gold) // tube, angled by steps
+    rect(ctx, 6, 4, 4, 8, C.gold)
+    rect(ctx, 9, 6, 3, 5, C.goldHi)
+    rect(ctx, 2, 1, 5, 2, C.ink) // lens
+    void w
+  },
+  coat_rack(ctx, w, h) {
+    rect(ctx, 7, 2, 2, h - 4, C.woodDark) // pole
+    rect(ctx, 4, h - 3, 8, 3, C.woodDark) // base
+    rect(ctx, 3, 3, 10, 1, C.wood) // hooks
+    rect(ctx, 2, 4, 5, 10, C.red) // coat
+    rect(ctx, 3, 4, 3, 2, C.redHi)
+    rect(ctx, 9, 4, 4, 6, C.teal) // scarf
+    rect(ctx, 10, 10, 2, 6, C.tealHi)
+    rect(ctx, 6, 0, 4, 2, C.ink) // hat
+    void w
+  },
+  trophy_shelf(ctx, w, h) {
+    rect(ctx, 0, h - 4, w, 4, C.woodDark) // shelf
+    rect(ctx, 0, h - 4, w, 1, C.woodHi)
+    for (const [x, tall, colour] of [[3, 9, C.gold], [12, 11, C.goldHi], [21, 8, C.metalHi]] as const) {
+      rect(ctx, x + 1, h - 4 - tall, 4, tall - 3, colour) // cup
+      rect(ctx, x, h - 4 - tall, 1, 3, colour) // handles
+      rect(ctx, x + 5, h - 4 - tall, 1, 3, colour)
+      rect(ctx, x + 1, h - 7, 4, 3, C.woodDark) // base
+    }
+  },
   door(ctx, w, h) {
     rect(ctx, 0, 0, w, h, C.woodDark) // frame
     rect(ctx, 2, 1, w - 4, h - 1, C.wood)
@@ -410,6 +554,13 @@ function drawPlayerFrame(ctx: Ctx, ox: number, dir: PlayerDirection, step: numbe
 // ---------------------------------------------------------------------------------------
 
 export const WINDOW_KEY = 'art-window'
+export const FAIRY_LIGHT_KEY = 'art-fairy-light'
+export const POSTER_KEYS = {
+  music: 'art-poster-music',
+  sport: 'art-poster-sport',
+  night: 'art-poster-stars',
+  art: 'art-poster-art',
+} as const
 export const SCONCE_KEY = 'art-sconce'
 export const COBWEB_KEY = 'art-cobweb'
 export const CLUTTER_KEYS = ['art-socks', 'art-books', 'art-paperball', 'art-mug', 'art-slippers', 'art-clothes'] as const
@@ -440,6 +591,31 @@ function drawCobweb(ctx: Ctx): void {
   for (let i = 0; i < 12; i++) rect(ctx, i, 0, 1, 12 - i, i % 3 === 0 ? web : 'rgba(0,0,0,0)')
   for (let i = 0; i < 12; i++) rect(ctx, 0, i, 12 - i, 1, i % 3 === 0 ? web : 'rgba(0,0,0,0)')
   for (let i = 0; i < 9; i++) rect(ctx, i, i, 1, 1, web)
+}
+
+function drawPoster(ctx: Ctx, theme: keyof typeof POSTER_KEYS): void {
+  rect(ctx, 2, 1, 12, 13, C.ink)
+  if (theme === 'music') {
+    rect(ctx, 3, 2, 10, 11, C.redDark) // gig poster
+    rect(ctx, 4, 3, 8, 1, C.goldHi)
+    rect(ctx, 7, 5, 2, 6, C.cream) // guitar silhouette
+    rect(ctx, 6, 9, 4, 3, C.cream)
+    rect(ctx, 4, 12, 8, 1, C.goldHi)
+  } else if (theme === 'sport') {
+    rect(ctx, 3, 2, 10, 6, C.teal) // pennant
+    rect(ctx, 3, 8, 7, 2, C.teal)
+    rect(ctx, 3, 10, 4, 2, C.teal)
+    rect(ctx, 5, 4, 6, 2, C.cream)
+  } else if (theme === 'night') {
+    rect(ctx, 3, 2, 10, 11, '#101a33') // star chart
+    for (const [x, y] of [[5, 4], [9, 3], [11, 7], [6, 9], [8, 11], [4, 7]] as const) rect(ctx, x, y, 1, 1, C.cream)
+    rect(ctx, 5, 4, 4, 1, '#3f5a8a')
+  } else {
+    rect(ctx, 3, 2, 10, 11, C.paper) // art print
+    rect(ctx, 4, 4, 4, 4, C.red)
+    rect(ctx, 8, 6, 4, 5, '#3f7bb0')
+    rect(ctx, 5, 9, 3, 3, C.goldHi)
+  }
 }
 
 const CLUTTER: Record<(typeof CLUTTER_KEYS)[number], (ctx: Ctx) => void> = {
@@ -512,9 +688,9 @@ function drawGlow(ctx: Ctx, size: number): void {
 }
 
 /** Creates every texture the room needs. Safe to call repeatedly. */
-export function createRoomArt(scene: Phaser.Scene, cols: number, rows: number, kinds: Iterable<RoomObjectData>): void {
+export function createRoomArt(scene: Phaser.Scene, cols: number, rows: number, kinds: Iterable<RoomObjectData>, mood = 'violet'): void {
   makeTexture(scene, FLOOR_KEY, cols * T, rows * T, (ctx) => drawFloor(ctx, cols, rows))
-  makeTexture(scene, WALL_FACE_KEY, cols * T, T, (ctx) => drawWallFace(ctx, cols))
+  makeTexture(scene, wallFaceKey(mood), cols * T, T, (ctx) => drawWallFace(ctx, cols, mood))
   makeTexture(scene, WALL_TOP_KEY, T, T, drawWallTop)
 
   for (const object of kinds) {
@@ -538,6 +714,11 @@ export function createRoomArt(scene: Phaser.Scene, cols: number, rows: number, k
   makeTexture(scene, SCONCE_KEY, T, T, drawSconce)
   makeTexture(scene, COBWEB_KEY, 12, 12, drawCobweb)
   for (const key of CLUTTER_KEYS) makeTexture(scene, key, T, T, CLUTTER[key])
+
+  for (const theme of Object.keys(POSTER_KEYS) as (keyof typeof POSTER_KEYS)[]) {
+    makeTexture(scene, POSTER_KEYS[theme], T, T, (ctx) => drawPoster(ctx, theme))
+  }
+  makeTexture(scene, FAIRY_LIGHT_KEY, 2, 2, (ctx) => rect(ctx, 0, 0, 2, 2, '#ffffff'))
 
   makeTexture(scene, KEYCAP_KEY, 11, 11, drawKeycap)
   makeTexture(scene, DUST_KEY, 1, 1, (ctx) => rect(ctx, 0, 0, 1, 1, '#ffe9b8'))

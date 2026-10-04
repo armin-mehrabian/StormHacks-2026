@@ -19,6 +19,7 @@ import { playIntro } from './ui/Intro.ts'
 import { Notice } from './ui/Notice.ts'
 import { Notebook } from './ui/Notebook.ts'
 import { ChoicePuzzle, IdentityBoard, PianoPuzzle } from './ui/StoryPuzzles.ts'
+import { RadioDial } from './ui/RadioDial.ts'
 import { PageOverlay } from './ui/PageOverlay.ts'
 import { showStartScreen } from './ui/StartScreen.ts'
 import { Subtitle } from './ui/Subtitle.ts'
@@ -37,7 +38,7 @@ const soundReady = sound.preload()
 
 const audio = new AudioManager({ createPlayback: sound.voicePlayback })
 const subtitle = new Subtitle()
-const narrator = new NarratorManager(gameEvents, audio, subtitle)
+const narrator = new NarratorManager(gameEvents, audio, subtitle, (clip, at) => sound.tagPosition(clip, at))
 const stopNarrator = narrator.start()
 
 const pages = new PageOverlay()
@@ -57,6 +58,7 @@ const ui = {
   choice: new ChoicePuzzle(),
   identity: new IdentityBoard(),
   piano: new PianoPuzzle((note) => sound.playNote(note)),
+  radio: new RadioDial(() => sound.tuner()),
   notebook,
 }
 
@@ -75,6 +77,13 @@ function onKeyDown(event: KeyboardEvent): void {
 }
 window.addEventListener('keydown', onKeyDown)
 
+/** A typewriter key strike for each typed character (spaces are silent). */
+const TYPE_KEYS = ['type-1', 'type-2', 'type-3'] as const
+function typeClick(char: string): void {
+  if (!char.trim()) return
+  sound.play(TYPE_KEYS[Math.floor(Math.random() * TYPE_KEYS.length)] ?? 'type-1', { volume: 0.45, rate: 0.92 + Math.random() * 0.16 })
+}
+
 let game: Phaser.Game | undefined
 void showStartScreen(dreamReady).then(async () => {
   // The Start click is the user gesture browsers require before audio can play.
@@ -91,10 +100,15 @@ void showStartScreen(dreamReady).then(async () => {
     voice: {
       readAloud: (text) => void narrator.readAloud(text),
       prefetchMemories: (memories) => narrator.prefetchMemories(memories),
-      playMemory: (objectId, memory) => {
+      playMemory: (objectId, memory, at) => {
         const kind = blueprint.objects.find((o) => o.id === objectId)?.kind
         const effect = (kind && memoryEffect(kind)) ?? 'room'
-        void narrator.playMemory(objectId, memory, (clip) => sound.tagEffect(clip, effect), () => {})
+        // The voice comes out of the object playing it (the radio sounds like the radio).
+        const place = (clip: Blob) => {
+          sound.tagEffect(clip, effect)
+          sound.tagPosition(clip, at)
+        }
+        void narrator.playMemory(objectId, memory, place, () => {})
       },
     },
     onEnd: (stats) => {
@@ -108,7 +122,7 @@ void showStartScreen(dreamReady).then(async () => {
       })
         .then((response) => (response.ok ? (response.json() as Promise<JournalResponse>) : Promise.reject(new Error(`HTTP ${response.status}`))))
         .then(({ entry }) => {
-          ui.endScreen.setJournal(entry, blueprint.dreamer, blueprint.title, stats)
+          ui.endScreen.setJournal(entry, blueprint.dreamer, blueprint.title, stats, typeClick)
           void narrator.readAloud(entry)
         })
         .catch((error) => {
@@ -118,9 +132,11 @@ void showStartScreen(dreamReady).then(async () => {
     },
   }
 
-  await playIntro(['2:47 AM', "Somewhere, someone can't sleep.", blueprint.introLine, '...and you just fell into their dream.'], () =>
-    sound.play('heartbeat', { volume: 0.8 }),
-  )
+  await playIntro(['2:47 AM', "Somewhere, someone can't sleep.", blueprint.introLine, '...and you just fell into their dream.'], {
+    onStart: () => sound.play('heartbeat', { volume: 0.8 }),
+    onChar: typeClick,
+    onLineEnd: () => sound.play('type-return', { volume: 0.5 }),
+  })
   sound.play('wake-up', { bus: 'ambience', volume: 0.9 })
   game = new Phaser.Game(createGameConfig())
   game.scene.add(BedroomScene.KEY, BedroomScene, true, sceneData)
@@ -142,6 +158,7 @@ import.meta.hot?.dispose(() => {
   ui.choice.destroy()
   ui.identity.destroy()
   ui.piano.destroy()
+  ui.radio.destroy()
   ui.notebook.destroy()
   game?.destroy(true)
 })
