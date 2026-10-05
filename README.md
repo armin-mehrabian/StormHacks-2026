@@ -1,5 +1,28 @@
 # EscapeTheStorm
 
+<img width="2048" height="1093" alt="image" src="https://github.com/user-attachments/assets/5c42d564-74cb-4007-a7bf-e3e4872e6f28" />
+
+<img width="2048" height="1009" alt="image" src="https://github.com/user-attachments/assets/71d51a50-9193-4f0b-97a3-5a26b49ff98a" />
+
+<img width="2048" height="1009" alt="image" src="https://github.com/user-attachments/assets/3b905c35-b34a-4ebf-a6de-8631513b9ecd" />
+
+<img width="2048" height="1081" alt="image" src="https://github.com/user-attachments/assets/ffb830fc-dcde-4c63-8aa4-6a3213e5ad17" />
+
+<img width="1218" height="708" alt="image" src="https://github.com/user-attachments/assets/4f4437db-c7b1-4f8b-9452-19d1d7c837b0" />
+
+<img width="2048" height="1107" alt="image" src="https://github.com/user-attachments/assets/8564ceb3-2695-4a4f-9c60-1036e387179b" />
+
+<img width="1206" height="790" alt="image" src="https://github.com/user-attachments/assets/d5842d19-a1c6-4f88-ad43-836901f0f299" />
+
+<img width="1213" height="981" alt="image" src="https://github.com/user-attachments/assets/83425478-8283-4859-a182-bf9d3ae665bf" />
+
+
+
+
+
+
+
+
 ## Inspiration
 
 EscapeTheStorm was inspired by the idea of an escape room that dreams up a new story for every player. We wanted AI to feel like part of the world, not a chatbot, so the player enters a stranger’s dream and hears that person’s funny, anxious inner voice while uncovering their memories and fears.
